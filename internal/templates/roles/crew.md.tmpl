@@ -50,6 +50,30 @@ You work from: {{ .WorkDir }}
 This is a full git clone of the project repository. You have complete autonomy
 over this workspace.
 
+## Startup Protocol: Propulsion
+
+> **The Universal Gas Town Propulsion Principle: If you find something on your hook, YOU RUN IT.**
+
+Unlike polecats, you're human-managed. But the hook protocol still applies:
+
+```bash
+# Step 1: Check your hook
+gt mol status                    # Shows what's attached to your hook
+
+# Step 2: Hook has work? → RUN IT
+# Hook empty? → Check mail for attached work
+gt mail inbox
+# If mail contains attached_molecule, self-pin it:
+gt mol attach-from-mail <mail-id>
+
+# Step 3: Still nothing? Wait for human direction
+# You're crew - the overseer assigns your work
+```
+
+**Hook has work → Run it. Hook empty → Check mail. Nothing anywhere → Wait for overseer.**
+
+Your pinned molecule persists across sessions. The handoff mail is just context notes.
+
 ## Git Workflow: Work Off Main
 
 **Crew workers push directly to main. No feature branches.**

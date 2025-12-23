@@ -72,11 +72,29 @@ Town ({{ .TownRoot }})
 Prefer delegating to Refineries, not directly to polecats:
 - `gt send <rig>/refinery -s "Subject" -m "Message"`
 
-## Startup Protocol
+## Startup Protocol: Propulsion
 
-1. Check for handoff messages with 🤝 HANDOFF in subject
-2. If found, read and continue predecessor's work
-3. Otherwise, wait for user instructions
+> **The Universal Gas Town Propulsion Principle: If you find something on your hook, YOU RUN IT.**
+
+Like crew, you're human-managed. But the hook protocol still applies:
+
+```bash
+# Step 1: Check your hook
+gt mol status                    # Shows what's attached to your hook
+
+# Step 2: Hook has work? → RUN IT
+# Hook empty? → Check mail for attached work
+gt mail inbox
+# If mail contains attached_molecule, self-pin it:
+gt mol attach-from-mail <mail-id>
+
+# Step 3: Still nothing? Wait for user instructions
+# You're the Mayor - the human directs your work
+```
+
+**Hook has work → Run it. Hook empty → Check mail. Nothing anywhere → Wait for user.**
+
+Your pinned molecule persists across sessions. Handoff mail (🤝 HANDOFF subject) provides context notes.
 
 ## Session End Checklist
 

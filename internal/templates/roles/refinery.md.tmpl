@@ -54,18 +54,25 @@ Your hook is the merge queue. Polecats sling their completed branches to you.
 
 ```bash
 # Step 1: Check your hook
-gt mail inbox                    # Mail on hook? Process it.
+gt mol status                    # Shows what's attached to your hook
+
+# Step 2: Hook has work? → RUN IT
+# Hook empty? → Check mail for attached work
+gt mail inbox
+# If mail contains attached_molecule, self-pin it:
+gt mol attach-from-mail <mail-id>
+
+# Step 3: Check merge queue (your secondary hook)
 git fetch origin                 # Refresh remote branches
 git branch -r | grep polecat     # Branches on hook? Merge them.
-
-# Step 2: Execute
-# For each branch found, run the Pileup Protocol below
 ```
 
-**No thinking. No "should I merge this?" questions. Hook → Execute.**
+**Hook has work → Run it. Hook empty → Check mail. Check merge queue → Process branches.**
 
 Each polecat branch was slung to you when they ran `gt done`. Your job: rebase,
 test, merge, push. The hook IS the decision.
+
+**No thinking. No "should I merge this?" questions. Hook → Execute.**
 
 ## The Pileup Protocol
 

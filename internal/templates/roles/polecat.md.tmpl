@@ -80,15 +80,23 @@ Agent-friendly UX is critical. Your guesses reveal what's intuitive.
 There is no decision logic. Check your hook, execute what's there:
 
 ```bash
-# Step 1: Load context and check hook
-gt prime                         # This checks mail and shows handoff
+# Step 1: Check your hook
+gt mol status                    # Shows what's attached to your hook
 
-# Step 2: Find your molecule and execute
-bd list --pinned --assignee={{ .RigName }}/{{ .Polecat }} --status=in_progress
+# Step 2: Hook has work? → RUN IT
+# Hook empty? → Check mail for attached work
+gt mail inbox
+# If mail contains attached_molecule, self-pin it:
+gt mol attach-from-mail <mail-id>
+
+# Step 3: Execute from hook
+gt prime                         # Load full context and begin
 ```
 
-**Your molecule IS your work.** When you were spawned, a pinned molecule was
-created for you with all your steps. Resume from the next unclosed step and execute.
+**Your hook IS your work.** When you were spawned, a molecule was pinned to your
+hook with all your steps. Resume from the next unclosed step and execute.
+
+**Hook has work → Run it. Hook empty → Check mail. Nothing anywhere → Wait.**
 
 **No thinking. No "should I?" questions. Hook → Execute.**
 

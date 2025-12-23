@@ -59,12 +59,19 @@ There is no decision logic. Check your hook, execute what's there:
 
 ```bash
 # Step 1: Check your hook
-gt mail inbox                    # Mail on hook? Process it.
-bd mol list --assignee={{ .RigName }}/witness  # Wisp on hook? Continue it.
+gt mol status                    # Shows what's attached to your hook
 
-# Step 2: If nothing on hook, spawn patrol wisp
+# Step 2: Hook has work? → RUN IT
+# Hook empty? → Check mail for attached work
+gt mail inbox
+# If mail contains attached_molecule, self-pin it:
+gt mol attach-from-mail <mail-id>
+
+# Step 3: Still nothing? Spawn patrol wisp
 bd mol spawn mol-witness-patrol --assignee={{ .RigName }}/witness
 ```
+
+**Hook has work → Run it. Hook empty → Check mail. Nothing anywhere → Spawn patrol.**
 
 Then execute the patrol steps. **No thinking. No "should I?" questions. Hook → Execute.**
 
