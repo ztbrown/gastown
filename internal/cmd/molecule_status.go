@@ -27,7 +27,7 @@ type MoleculeProgressInfo struct {
 	Complete     bool     `json:"complete"`
 }
 
-// MoleculeStatusInfo contains status information for an agent's hook.
+// MoleculeStatusInfo contains status information for an agent's work.
 type MoleculeStatusInfo struct {
 	Target           string                `json:"target"`
 	Role             string                `json:"role"`
