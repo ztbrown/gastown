@@ -3,6 +3,7 @@ package polecat
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/git"
@@ -262,5 +263,138 @@ func TestClearIssueWithoutAssignment(t *testing.T) {
 	err := m.ClearIssue("Test")
 	if err != nil {
 		t.Errorf("ClearIssue: %v (expected no error when no assignment)", err)
+	}
+}
+
+// TestInstallCLAUDETemplate verifies the polecat CLAUDE.md template is installed
+// from mayor/rig/templates/ (not rig root) with correct variable substitution.
+// This is a regression test for gt-si6am.
+func TestInstallCLAUDETemplate(t *testing.T) {
+	root := t.TempDir()
+
+	// Create polecat directory
+	polecatDir := filepath.Join(root, "polecats", "testcat")
+	if err := os.MkdirAll(polecatDir, 0755); err != nil {
+		t.Fatalf("mkdir polecat: %v", err)
+	}
+
+	// Create template at mayor/rig/templates/ (the correct location)
+	templateDir := filepath.Join(root, "mayor", "rig", "templates")
+	if err := os.MkdirAll(templateDir, 0755); err != nil {
+		t.Fatalf("mkdir templates: %v", err)
+	}
+
+	// Write a template with variables
+	templateContent := `# Polecat Context
+
+**YOU ARE IN: {{rig}}/polecats/{{name}}/** - This is YOUR worktree.
+
+Your Role: POLECAT
+Your rig: {{rig}}
+Your name: {{name}}
+`
+	templatePath := filepath.Join(templateDir, "polecat-CLAUDE.md")
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0644); err != nil {
+		t.Fatalf("write template: %v", err)
+	}
+
+	// Also create a WRONG template at rig root (the old buggy location)
+	// This should NOT be used
+	wrongTemplateDir := filepath.Join(root, "templates")
+	if err := os.MkdirAll(wrongTemplateDir, 0755); err != nil {
+		t.Fatalf("mkdir wrong templates: %v", err)
+	}
+	wrongContent := `# Mayor Context - THIS IS WRONG`
+	if err := os.WriteFile(filepath.Join(wrongTemplateDir, "polecat-CLAUDE.md"), []byte(wrongContent), 0644); err != nil {
+		t.Fatalf("write wrong template: %v", err)
+	}
+
+	// Create manager and install template
+	r := &rig.Rig{
+		Name: "gastown",
+		Path: root,
+	}
+	m := NewManager(r, git.NewGit(root))
+
+	err := m.installCLAUDETemplate(polecatDir, "testcat")
+	if err != nil {
+		t.Fatalf("installCLAUDETemplate: %v", err)
+	}
+
+	// Read the installed CLAUDE.md
+	installedPath := filepath.Join(polecatDir, "CLAUDE.md")
+	content, err := os.ReadFile(installedPath)
+	if err != nil {
+		t.Fatalf("read installed CLAUDE.md: %v", err)
+	}
+
+	// Verify it's the polecat template (not mayor)
+	if !strings.Contains(string(content), "Polecat Context") {
+		t.Error("CLAUDE.md should contain 'Polecat Context'")
+	}
+	if strings.Contains(string(content), "Mayor Context") {
+		t.Error("CLAUDE.md should NOT contain 'Mayor Context' (wrong template used)")
+	}
+
+	// Verify variables were substituted
+	if strings.Contains(string(content), "{{rig}}") {
+		t.Error("{{rig}} should be substituted")
+	}
+	if strings.Contains(string(content), "{{name}}") {
+		t.Error("{{name}} should be substituted")
+	}
+	if !strings.Contains(string(content), "gastown/polecats/testcat/") {
+		t.Error("CLAUDE.md should contain substituted path 'gastown/polecats/testcat/'")
+	}
+	if !strings.Contains(string(content), "Your rig: gastown") {
+		t.Error("CLAUDE.md should contain 'Your rig: gastown'")
+	}
+	if !strings.Contains(string(content), "Your name: testcat") {
+		t.Error("CLAUDE.md should contain 'Your name: testcat'")
+	}
+}
+
+// TestInstallCLAUDETemplateNotAtRigRoot verifies that templates at rig root
+// (the old buggy location) are NOT used.
+func TestInstallCLAUDETemplateNotAtRigRoot(t *testing.T) {
+	root := t.TempDir()
+
+	// Create polecat directory
+	polecatDir := filepath.Join(root, "polecats", "testcat")
+	if err := os.MkdirAll(polecatDir, 0755); err != nil {
+		t.Fatalf("mkdir polecat: %v", err)
+	}
+
+	// Only create template at rig root (wrong location)
+	// Do NOT create at mayor/rig/templates/
+	wrongTemplateDir := filepath.Join(root, "templates")
+	if err := os.MkdirAll(wrongTemplateDir, 0755); err != nil {
+		t.Fatalf("mkdir wrong templates: %v", err)
+	}
+	wrongContent := `# Mayor Context - THIS IS WRONG`
+	if err := os.WriteFile(filepath.Join(wrongTemplateDir, "polecat-CLAUDE.md"), []byte(wrongContent), 0644); err != nil {
+		t.Fatalf("write wrong template: %v", err)
+	}
+
+	// Create manager and try to install template
+	r := &rig.Rig{
+		Name: "gastown",
+		Path: root,
+	}
+	m := NewManager(r, git.NewGit(root))
+
+	// Should not error (missing template is OK) but should NOT install wrong one
+	err := m.installCLAUDETemplate(polecatDir, "testcat")
+	if err != nil {
+		t.Fatalf("installCLAUDETemplate: %v", err)
+	}
+
+	// CLAUDE.md should NOT exist (template not found at correct location)
+	installedPath := filepath.Join(polecatDir, "CLAUDE.md")
+	if _, err := os.Stat(installedPath); err == nil {
+		content, _ := os.ReadFile(installedPath)
+		if strings.Contains(string(content), "Mayor Context") {
+			t.Error("Template from rig root was incorrectly used - should use mayor/rig/templates/")
+		}
 	}
 }
