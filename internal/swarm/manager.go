@@ -292,15 +292,15 @@ func (m *Manager) loadTasksFromBeads(epicID string) ([]SwarmTask, error) {
 
 	// Parse JSON output - bd show returns an array
 	var issues []struct {
-		ID         string `json:"id"`
-		Title      string `json:"title"`
-		Status     string `json:"status"`
-		Dependents []struct {
+		ID           string `json:"id"`
+		Title        string `json:"title"`
+		Status       string `json:"status"`
+		Dependencies []struct {
 			ID             string `json:"id"`
 			Title          string `json:"title"`
 			Status         string `json:"status"`
 			DependencyType string `json:"dependency_type"`
-		} `json:"dependents"`
+		} `json:"dependencies"`
 	}
 
 	if err := json.Unmarshal(stdout.Bytes(), &issues); err != nil {
@@ -311,10 +311,10 @@ func (m *Manager) loadTasksFromBeads(epicID string) ([]SwarmTask, error) {
 		return nil, fmt.Errorf("epic not found: %s", epicID)
 	}
 
-	// Extract dependents as tasks (issues that depend on/are blocked by this epic)
+	// Extract dependencies as tasks (issues that depend on/are blocked by this epic)
 	// Accept both "parent-child" and "blocks" relationships
 	var tasks []SwarmTask
-	for _, dep := range issues[0].Dependents {
+	for _, dep := range issues[0].Dependencies {
 		if dep.DependencyType != "parent-child" && dep.DependencyType != "blocks" {
 			continue
 		}
