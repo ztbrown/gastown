@@ -76,14 +76,12 @@ func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 	// Find the first rig (by name, alphabetically) for global agents
 	// Only consider gt-prefix rigs since other prefixes can't have agent beads yet
 	var firstRigName string
-	var firstPrefix string
 	for prefix, rigName := range prefixToRig {
 		if prefix != "gt" {
 			continue // Skip non-gt prefixes for first rig selection
 		}
 		if firstRigName == "" || rigName < firstRigName {
 			firstRigName = rigName
-			firstPrefix = prefix
 		}
 	}
 
@@ -101,9 +99,9 @@ func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 		rigBeadsPath := filepath.Join(ctx.TownRoot, rigName, "mayor", "rig")
 		bd := beads.New(rigBeadsPath)
 
-		// Check rig-specific agents
-		witnessID := fmt.Sprintf("%s-witness-%s", prefix, rigName)
-		refineryID := fmt.Sprintf("%s-refinery-%s", prefix, rigName)
+		// Check rig-specific agents (using canonical naming: prefix-rig-role-name)
+		witnessID := beads.WitnessBeadID(rigName)
+		refineryID := beads.RefineryBeadID(rigName)
 
 		if _, err := bd.Show(witnessID); err != nil {
 			missing = append(missing, witnessID)
@@ -118,7 +116,7 @@ func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 		// Check crew worker agents
 		crewWorkers := listCrewWorkers(ctx.TownRoot, rigName)
 		for _, workerName := range crewWorkers {
-			crewID := fmt.Sprintf("%s-crew-%s-%s", prefix, rigName, workerName)
+			crewID := beads.CrewBeadID(rigName, workerName)
 			if _, err := bd.Show(crewID); err != nil {
 				missing = append(missing, crewID)
 			}
@@ -127,8 +125,8 @@ func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 
 		// Check global agents in first rig
 		if rigName == firstRigName {
-			deaconID := firstPrefix + "-deacon"
-			mayorID := firstPrefix + "-mayor"
+			deaconID := beads.DeaconBeadID()
+			mayorID := beads.MayorBeadID()
 
 			if _, err := bd.Show(deaconID); err != nil {
 				missing = append(missing, deaconID)
@@ -198,14 +196,12 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 
 	// Find the first rig for global agents (only gt-prefix rigs)
 	var firstRigName string
-	var firstPrefix string
 	for prefix, rigName := range prefixToRig {
 		if prefix != "gt" {
 			continue
 		}
 		if firstRigName == "" || rigName < firstRigName {
 			firstRigName = rigName
-			firstPrefix = prefix
 		}
 	}
 
@@ -219,8 +215,8 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 		rigBeadsPath := filepath.Join(ctx.TownRoot, rigName, "mayor", "rig")
 		bd := beads.New(rigBeadsPath)
 
-		// Create rig-specific agents if missing
-		witnessID := fmt.Sprintf("%s-witness-%s", prefix, rigName)
+		// Create rig-specific agents if missing (using canonical naming: prefix-rig-role-name)
+		witnessID := beads.WitnessBeadID(rigName)
 		if _, err := bd.Show(witnessID); err != nil {
 			fields := &beads.AgentFields{
 				RoleType:   "witness",
@@ -234,7 +230,7 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 			}
 		}
 
-		refineryID := fmt.Sprintf("%s-refinery-%s", prefix, rigName)
+		refineryID := beads.RefineryBeadID(rigName)
 		if _, err := bd.Show(refineryID); err != nil {
 			fields := &beads.AgentFields{
 				RoleType:   "refinery",
@@ -251,7 +247,7 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 		// Create crew worker agents if missing
 		crewWorkers := listCrewWorkers(ctx.TownRoot, rigName)
 		for _, workerName := range crewWorkers {
-			crewID := fmt.Sprintf("%s-crew-%s-%s", prefix, rigName, workerName)
+			crewID := beads.CrewBeadID(rigName, workerName)
 			if _, err := bd.Show(crewID); err != nil {
 				fields := &beads.AgentFields{
 					RoleType:   "crew",
@@ -268,7 +264,7 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 
 		// Create global agents in first rig if missing
 		if rigName == firstRigName {
-			deaconID := firstPrefix + "-deacon"
+			deaconID := beads.DeaconBeadID()
 			if _, err := bd.Show(deaconID); err != nil {
 				fields := &beads.AgentFields{
 					RoleType:   "deacon",
@@ -282,7 +278,7 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 				}
 			}
 
-			mayorID := firstPrefix + "-mayor"
+			mayorID := beads.MayorBeadID()
 			if _, err := bd.Show(mayorID); err != nil {
 				fields := &beads.AgentFields{
 					RoleType:   "mayor",

@@ -544,33 +544,34 @@ func (d *Daemon) getAgentBeadInfo(agentBeadID string) (*AgentBeadInfo, error) {
 }
 
 // identityToAgentBeadID maps a daemon identity to an agent bead ID.
+// Uses the canonical naming convention: prefix-rig-role-name
 // Examples:
 //   - "deacon" → "gt-deacon"
 //   - "mayor" → "gt-mayor"
-//   - "gastown-witness" → "gt-witness-gastown"
-//   - "gastown-refinery" → "gt-refinery-gastown"
+//   - "gastown-witness" → "gt-gastown-witness"
+//   - "gastown-refinery" → "gt-gastown-refinery"
 func (d *Daemon) identityToAgentBeadID(identity string) string {
 	switch identity {
 	case "deacon":
-		return "gt-deacon"
+		return beads.DeaconBeadID()
 	case "mayor":
-		return "gt-mayor"
+		return beads.MayorBeadID()
 	default:
-		// Pattern: <rig>-witness → gt-witness-<rig>
+		// Pattern: <rig>-witness → gt-<rig>-witness
 		if strings.HasSuffix(identity, "-witness") {
 			rigName := strings.TrimSuffix(identity, "-witness")
-			return "gt-witness-" + rigName
+			return beads.WitnessBeadID(rigName)
 		}
-		// Pattern: <rig>-refinery → gt-refinery-<rig>
+		// Pattern: <rig>-refinery → gt-<rig>-refinery
 		if strings.HasSuffix(identity, "-refinery") {
 			rigName := strings.TrimSuffix(identity, "-refinery")
-			return "gt-refinery-" + rigName
+			return beads.RefineryBeadID(rigName)
 		}
-		// Pattern: <rig>-crew-<name> → gt-crew-<rig>-<name>
+		// Pattern: <rig>-crew-<name> → gt-<rig>-crew-<name>
 		if strings.Contains(identity, "-crew-") {
 			parts := strings.SplitN(identity, "-crew-", 2)
 			if len(parts) == 2 {
-				return "gt-crew-" + parts[0] + "-" + parts[1]
+				return beads.CrewBeadID(parts[0], parts[1])
 			}
 		}
 		// Unknown format
@@ -588,16 +589,16 @@ const DeadAgentTimeout = 15 * time.Minute
 func (d *Daemon) checkStaleAgents() {
 	// Known agent bead IDs to check
 	agentBeadIDs := []string{
-		"gt-deacon",
-		"gt-mayor",
+		beads.DeaconBeadID(),
+		beads.MayorBeadID(),
 	}
 
 	// Add rig-specific agents (witness, refinery) for known rigs
 	// For now, we check gastown - could be expanded to discover rigs dynamically
 	rigs := []string{"gastown", "beads"}
 	for _, rig := range rigs {
-		agentBeadIDs = append(agentBeadIDs, "gt-witness-"+rig)
-		agentBeadIDs = append(agentBeadIDs, "gt-refinery-"+rig)
+		agentBeadIDs = append(agentBeadIDs, beads.WitnessBeadID(rig))
+		agentBeadIDs = append(agentBeadIDs, beads.RefineryBeadID(rig))
 	}
 
 	for _, agentBeadID := range agentBeadIDs {

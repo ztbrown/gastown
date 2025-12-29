@@ -313,23 +313,26 @@ func renderAgentDetails(agent AgentRuntime, indent string, hooks []AgentHookInfo
 		stateInfo = style.Dim.Render(fmt.Sprintf(" [%s]", agent.State))
 	}
 
-	// Build agent bead ID
+	// Build agent bead ID using canonical naming: prefix-rig-role-name
 	agentBeadID := "gt-" + agent.Name
 	if agent.Address != "" && agent.Address != agent.Name {
-		// Use address for full path agents like gastown/crew/joe → gt-crew-gastown-joe
+		// Use address for full path agents like gastown/crew/joe → gt-gastown-crew-joe
 		addr := strings.TrimSuffix(agent.Address, "/") // Remove trailing slash for global agents
 		parts := strings.Split(addr, "/")
 		if len(parts) == 1 {
 			// Global agent: mayor/, deacon/ → gt-mayor, gt-deacon
-			agentBeadID = "gt-" + parts[0]
+			agentBeadID = beads.AgentBeadID("", parts[0], "")
 		} else if len(parts) >= 2 {
+			rig := parts[0]
 			if parts[1] == "crew" && len(parts) >= 3 {
-				agentBeadID = fmt.Sprintf("gt-crew-%s-%s", parts[0], parts[2])
-			} else if parts[1] == "witness" || parts[1] == "refinery" {
-				agentBeadID = fmt.Sprintf("gt-%s-%s", parts[1], parts[0])
+				agentBeadID = beads.CrewBeadID(rig, parts[2])
+			} else if parts[1] == "witness" {
+				agentBeadID = beads.WitnessBeadID(rig)
+			} else if parts[1] == "refinery" {
+				agentBeadID = beads.RefineryBeadID(rig)
 			} else if len(parts) == 2 {
 				// polecat: rig/name
-				agentBeadID = fmt.Sprintf("gt-polecat-%s-%s", parts[0], parts[1])
+				agentBeadID = beads.PolecatBeadID(rig, parts[1])
 			}
 		}
 	}
@@ -531,7 +534,7 @@ func discoverRigAgents(t *tmux.Tmux, r *rig.Rig, crews []string, agentBeads *bea
 			Running: running,
 		}
 		// Look up agent bead
-		agentID := fmt.Sprintf("gt-witness-%s", r.Name)
+		agentID := beads.WitnessBeadID(r.Name)
 		if issue, fields, err := agentBeads.GetAgentBead(agentID); err == nil && issue != nil {
 			witness.HookBead = fields.HookBead
 			witness.State = fields.AgentState
@@ -558,7 +561,7 @@ func discoverRigAgents(t *tmux.Tmux, r *rig.Rig, crews []string, agentBeads *bea
 			Running: running,
 		}
 		// Look up agent bead
-		agentID := fmt.Sprintf("gt-refinery-%s", r.Name)
+		agentID := beads.RefineryBeadID(r.Name)
 		if issue, fields, err := agentBeads.GetAgentBead(agentID); err == nil && issue != nil {
 			refinery.HookBead = fields.HookBead
 			refinery.State = fields.AgentState
@@ -585,7 +588,7 @@ func discoverRigAgents(t *tmux.Tmux, r *rig.Rig, crews []string, agentBeads *bea
 			Running: running,
 		}
 		// Look up agent bead
-		agentID := fmt.Sprintf("gt-polecat-%s-%s", r.Name, name)
+		agentID := beads.PolecatBeadID(r.Name, name)
 		if issue, fields, err := agentBeads.GetAgentBead(agentID); err == nil && issue != nil {
 			polecat.HookBead = fields.HookBead
 			polecat.State = fields.AgentState
@@ -612,7 +615,7 @@ func discoverRigAgents(t *tmux.Tmux, r *rig.Rig, crews []string, agentBeads *bea
 			Running: running,
 		}
 		// Look up agent bead
-		agentID := fmt.Sprintf("gt-crew-%s-%s", r.Name, name)
+		agentID := beads.CrewBeadID(r.Name, name)
 		if issue, fields, err := agentBeads.GetAgentBead(agentID); err == nil && issue != nil {
 			crewAgent.HookBead = fields.HookBead
 			crewAgent.State = fields.AgentState

@@ -135,9 +135,9 @@ func runThemeApply(cmd *cobra.Command, args []string) error {
 			theme = tmux.DeaconTheme()
 			worker = "Deacon"
 			role = "health-check"
-		} else if strings.HasPrefix(session, "gt-witness-") {
-			// Witness sessions: gt-witness-<rig>
-			rig = strings.TrimPrefix(session, "gt-witness-")
+		} else if strings.HasSuffix(session, "-witness") && strings.HasPrefix(session, "gt-") {
+			// Witness sessions: gt-<rig>-witness
+			rig = strings.TrimPrefix(strings.TrimSuffix(session, "-witness"), "gt-")
 			theme = getThemeForRole(rig, "witness")
 			worker = "witness"
 			role = "witness"

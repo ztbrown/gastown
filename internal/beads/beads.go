@@ -607,7 +607,8 @@ func ParseAgentFields(description string) *AgentFields {
 }
 
 // CreateAgentBead creates an agent bead for tracking agent lifecycle.
-// The ID format is: <prefix>-<role>-<rig>-<name> (e.g., gt-polecat-gastown-Toast)
+// The ID format is: <prefix>-<rig>-<role>-<name> (e.g., gt-gastown-polecat-Toast)
+// Use AgentBeadID() helper to generate correct IDs.
 func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, error) {
 	description := FormatAgentDescription(title, fields)
 
@@ -705,4 +706,92 @@ func (b *Beads) GetAgentBead(id string) (*Issue, *AgentFields, error) {
 
 	fields := ParseAgentFields(issue.Description)
 	return issue, fields, nil
+}
+
+// Agent bead ID naming convention:
+//   prefix-rig-role-name
+//
+// Examples:
+//   - gt-mayor (town-level, no rig)
+//   - gt-deacon (town-level, no rig)
+//   - gt-gastown-witness (rig-level singleton)
+//   - gt-gastown-refinery (rig-level singleton)
+//   - gt-gastown-crew-max (rig-level named agent)
+//   - gt-gastown-polecat-Toast (rig-level named agent)
+
+// AgentBeadID generates the canonical agent bead ID.
+// For town-level agents (mayor, deacon), pass empty rig and name.
+// For rig-level singletons (witness, refinery), pass empty name.
+// For named agents (crew, polecat), pass all three.
+func AgentBeadID(rig, role, name string) string {
+	if rig == "" {
+		// Town-level agent: gt-mayor, gt-deacon
+		return "gt-" + role
+	}
+	if name == "" {
+		// Rig-level singleton: gt-gastown-witness, gt-gastown-refinery
+		return "gt-" + rig + "-" + role
+	}
+	// Rig-level named agent: gt-gastown-crew-max, gt-gastown-polecat-Toast
+	return "gt-" + rig + "-" + role + "-" + name
+}
+
+// MayorBeadID returns the Mayor agent bead ID.
+func MayorBeadID() string {
+	return "gt-mayor"
+}
+
+// DeaconBeadID returns the Deacon agent bead ID.
+func DeaconBeadID() string {
+	return "gt-deacon"
+}
+
+// WitnessBeadID returns the Witness agent bead ID for a rig.
+func WitnessBeadID(rig string) string {
+	return AgentBeadID(rig, "witness", "")
+}
+
+// RefineryBeadID returns the Refinery agent bead ID for a rig.
+func RefineryBeadID(rig string) string {
+	return AgentBeadID(rig, "refinery", "")
+}
+
+// CrewBeadID returns a Crew worker agent bead ID.
+func CrewBeadID(rig, name string) string {
+	return AgentBeadID(rig, "crew", name)
+}
+
+// PolecatBeadID returns a Polecat agent bead ID.
+func PolecatBeadID(rig, name string) string {
+	return AgentBeadID(rig, "polecat", name)
+}
+
+// ParseAgentBeadID parses an agent bead ID into its components.
+// Returns rig, role, name, and whether parsing succeeded.
+// For town-level agents, rig will be empty.
+// For singletons, name will be empty.
+func ParseAgentBeadID(id string) (rig, role, name string, ok bool) {
+	if !strings.HasPrefix(id, "gt-") {
+		return "", "", "", false
+	}
+	rest := strings.TrimPrefix(id, "gt-")
+	parts := strings.Split(rest, "-")
+
+	switch len(parts) {
+	case 1:
+		// Town-level: gt-mayor, gt-deacon
+		return "", parts[0], "", true
+	case 2:
+		// Rig-level singleton: gt-gastown-witness
+		return parts[0], parts[1], "", true
+	case 3:
+		// Rig-level named: gt-gastown-crew-max
+		return parts[0], parts[1], parts[2], true
+	default:
+		// Handle names with hyphens: gt-gastown-polecat-my-agent-name
+		if len(parts) >= 3 {
+			return parts[0], parts[1], strings.Join(parts[2:], "-"), true
+		}
+		return "", "", "", false
+	}
 }

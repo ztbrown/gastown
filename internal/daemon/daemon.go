@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/keepalive"
 	"github.com/steveyegge/gastown/internal/polecat"
@@ -327,7 +328,7 @@ func (d *Daemon) ensureWitnessesRunning() {
 
 // ensureWitnessRunning ensures the witness for a specific rig is running.
 func (d *Daemon) ensureWitnessRunning(rigName string) {
-	agentID := "gt-witness-" + rigName
+	agentID := beads.WitnessBeadID(rigName)
 	sessionName := "gt-" + rigName + "-witness"
 
 	// Check agent bead state (ZFC: trust what agent reports)
@@ -374,7 +375,7 @@ func (d *Daemon) pokeWitnesses() {
 
 // pokeWitness sends a heartbeat to a specific rig's witness.
 func (d *Daemon) pokeWitness(rigName string) {
-	agentID := "gt-witness-" + rigName
+	agentID := beads.WitnessBeadID(rigName)
 	sessionName := "gt-" + rigName + "-witness"
 
 	// Check agent bead state (ZFC: trust what agent reports)

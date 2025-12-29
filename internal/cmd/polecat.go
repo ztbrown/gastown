@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -1208,7 +1209,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  - Kill session: gt-%s-%s\n", p.rigName, p.polecatName)
 			fmt.Printf("  - Delete worktree: %s/polecats/%s\n", p.r.Path, p.polecatName)
 			fmt.Printf("  - Delete branch (if exists)\n")
-			fmt.Printf("  - Close agent bead: gt-polecat-%s-%s\n", p.rigName, p.polecatName)
+			fmt.Printf("  - Close agent bead: %s\n", beads.PolecatBeadID(p.rigName, p.polecatName))
 			continue
 		}
 
@@ -1257,7 +1258,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 		}
 
 		// Step 5: Close agent bead (if exists)
-		agentBeadID := fmt.Sprintf("gt-polecat-%s-%s", p.rigName, p.polecatName)
+		agentBeadID := beads.PolecatBeadID(p.rigName, p.polecatName)
 		closeCmd := exec.Command("bd", "close", agentBeadID, "--reason=nuked")
 		closeCmd.Dir = filepath.Join(p.r.Path, "mayor", "rig")
 		if err := closeCmd.Run(); err != nil {

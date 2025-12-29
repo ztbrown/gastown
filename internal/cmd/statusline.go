@@ -60,8 +60,8 @@ func runStatusLine(cmd *cobra.Command, args []string) error {
 		return runDeaconStatusLine(t)
 	}
 
-	// Witness status line (session naming: gt-witness-<rig>)
-	if role == "witness" || strings.HasPrefix(statusLineSession, "gt-witness-") {
+	// Witness status line (session naming: gt-<rig>-witness)
+	if role == "witness" || strings.HasSuffix(statusLineSession, "-witness") {
 		return runWitnessStatusLine(t, rigName)
 	}
 
@@ -221,9 +221,9 @@ func runDeaconStatusLine(t *tmux.Tmux) error {
 // Shows: polecat count, crew count, mail preview
 func runWitnessStatusLine(t *tmux.Tmux, rigName string) error {
 	if rigName == "" {
-		// Try to extract from session name: gt-witness-<rig>
-		if strings.HasPrefix(statusLineSession, "gt-witness-") {
-			rigName = strings.TrimPrefix(statusLineSession, "gt-witness-")
+		// Try to extract from session name: gt-<rig>-witness
+		if strings.HasSuffix(statusLineSession, "-witness") && strings.HasPrefix(statusLineSession, "gt-") {
+			rigName = strings.TrimPrefix(strings.TrimSuffix(statusLineSession, "-witness"), "gt-")
 		}
 	}
 

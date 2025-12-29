@@ -414,16 +414,16 @@ func (m *Manager) initAgentBeads(rigPath, rigName, prefix string, isFirstRig boo
 
 	var agents []agentDef
 
-	// Always create rig-specific agents
+	// Always create rig-specific agents (using canonical naming: prefix-rig-role-name)
 	agents = append(agents,
 		agentDef{
-			id:       fmt.Sprintf("%s-witness-%s", prefix, rigName),
+			id:       beads.WitnessBeadID(rigName),
 			roleType: "witness",
 			rig:      rigName,
 			desc:     fmt.Sprintf("Witness for %s - monitors polecat health and progress.", rigName),
 		},
 		agentDef{
-			id:       fmt.Sprintf("%s-refinery-%s", prefix, rigName),
+			id:       beads.RefineryBeadID(rigName),
 			roleType: "refinery",
 			rig:      rigName,
 			desc:     fmt.Sprintf("Refinery for %s - processes merge queue.", rigName),
@@ -434,13 +434,13 @@ func (m *Manager) initAgentBeads(rigPath, rigName, prefix string, isFirstRig boo
 	if isFirstRig {
 		agents = append(agents,
 			agentDef{
-				id:       prefix + "-deacon",
+				id:       beads.DeaconBeadID(),
 				roleType: "deacon",
 				rig:      "",
 				desc:     "Deacon (daemon beacon) - receives mechanical heartbeats, runs town plugins and monitoring.",
 			},
 			agentDef{
-				id:       prefix + "-mayor",
+				id:       beads.MayorBeadID(),
 				roleType: "mayor",
 				rig:      "",
 				desc:     "Mayor - global coordinator, handles cross-rig communication and escalations.",

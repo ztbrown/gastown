@@ -17,12 +17,14 @@ import (
 // Note: Agent field parsing is now in internal/beads/fields.go (AgentFields, ParseAgentFieldsFromDescription)
 
 // buildAgentBeadID constructs the agent bead ID from an agent identity.
+// Uses canonical naming: prefix-rig-role-name
 // Examples:
 //   - "mayor" -> "gt-mayor"
 //   - "deacon" -> "gt-deacon"
-//   - "gastown/witness" -> "gt-witness-gastown"
-//   - "gastown/refinery" -> "gt-refinery-gastown"
-//   - "gastown/nux" (polecat) -> "gt-polecat-gastown-nux"
+//   - "gastown/witness" -> "gt-gastown-witness"
+//   - "gastown/refinery" -> "gt-gastown-refinery"
+//   - "gastown/nux" (polecat) -> "gt-gastown-polecat-nux"
+//   - "gastown/crew/max" -> "gt-gastown-crew-max"
 //
 // If role is unknown, it tries to infer from the identity string.
 func buildAgentBeadID(identity string, role Role) string {
@@ -32,22 +34,22 @@ func buildAgentBeadID(identity string, role Role) string {
 	if role == RoleUnknown || role == Role("") {
 		switch {
 		case identity == "mayor":
-			return "gt-mayor"
+			return beads.MayorBeadID()
 		case identity == "deacon":
-			return "gt-deacon"
+			return beads.DeaconBeadID()
 		case len(parts) == 2 && parts[1] == "witness":
-			return "gt-witness-" + parts[0]
+			return beads.WitnessBeadID(parts[0])
 		case len(parts) == 2 && parts[1] == "refinery":
-			return "gt-refinery-" + parts[0]
+			return beads.RefineryBeadID(parts[0])
 		case len(parts) == 2:
 			// Assume rig/name is a polecat
-			return "gt-polecat-" + parts[0] + "-" + parts[1]
+			return beads.PolecatBeadID(parts[0], parts[1])
 		case len(parts) == 3 && parts[1] == "crew":
-			// rig/crew/name - crew member (no agent bead)
-			return ""
+			// rig/crew/name - crew member
+			return beads.CrewBeadID(parts[0], parts[2])
 		case len(parts) == 3 && parts[1] == "polecats":
 			// rig/polecats/name - explicit polecat
-			return "gt-polecat-" + parts[0] + "-" + parts[2]
+			return beads.PolecatBeadID(parts[0], parts[2])
 		default:
 			return ""
 		}
@@ -55,28 +57,28 @@ func buildAgentBeadID(identity string, role Role) string {
 
 	switch role {
 	case RoleMayor:
-		return "gt-mayor"
+		return beads.MayorBeadID()
 	case RoleDeacon:
-		return "gt-deacon"
+		return beads.DeaconBeadID()
 	case RoleWitness:
 		if len(parts) >= 1 {
-			return "gt-witness-" + parts[0]
+			return beads.WitnessBeadID(parts[0])
 		}
-		return "gt-witness"
+		return ""
 	case RoleRefinery:
 		if len(parts) >= 1 {
-			return "gt-refinery-" + parts[0]
+			return beads.RefineryBeadID(parts[0])
 		}
-		return "gt-refinery"
+		return ""
 	case RolePolecat:
 		if len(parts) >= 2 {
-			return "gt-polecat-" + parts[0] + "-" + parts[1]
-		} else if len(parts) == 1 {
-			return "gt-polecat-" + parts[0]
+			return beads.PolecatBeadID(parts[0], parts[1])
 		}
 		return ""
 	case RoleCrew:
-		// Crew members may not have agent beads
+		if len(parts) >= 3 && parts[1] == "crew" {
+			return beads.CrewBeadID(parts[0], parts[2])
+		}
 		return ""
 	default:
 		return ""

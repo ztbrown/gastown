@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/beads"
 )
 
 // EventSource represents a source of events
@@ -170,45 +172,39 @@ func parseSimpleLine(line string) *Event {
 }
 
 // parseBeadContext extracts actor/rig/role from a bead ID
+// Uses canonical naming: prefix-rig-role-name
+// Examples: gt-gastown-crew-joe, gt-gastown-witness, gt-mayor
 func parseBeadContext(beadID string) (actor, rig, role string) {
 	if beadID == "" {
 		return
 	}
 
-	// Agent beads: gt-crew-gastown-joe, gt-witness-gastown, gt-mayor
-	if strings.HasPrefix(beadID, "gt-crew-") {
-		parts := strings.Split(beadID, "-")
-		if len(parts) >= 4 {
-			rig = parts[2]
-			actor = strings.Join(parts[2:], "/")
-			role = "crew"
+	// Use the canonical parser
+	parsedRig, parsedRole, name, ok := beads.ParseAgentBeadID(beadID)
+	if !ok {
+		return
+	}
+
+	rig = parsedRig
+	role = parsedRole
+
+	// Build actor identifier
+	switch parsedRole {
+	case "mayor", "deacon":
+		actor = parsedRole
+	case "witness", "refinery":
+		actor = parsedRole
+	case "crew":
+		if name != "" {
+			actor = parsedRig + "/crew/" + name
+		} else {
+			actor = parsedRole
 		}
-	} else if strings.HasPrefix(beadID, "gt-witness-") {
-		parts := strings.Split(beadID, "-")
-		if len(parts) >= 3 {
-			rig = parts[2]
-			actor = "witness"
-			role = "witness"
-		}
-	} else if strings.HasPrefix(beadID, "gt-refinery-") {
-		parts := strings.Split(beadID, "-")
-		if len(parts) >= 3 {
-			rig = parts[2]
-			actor = "refinery"
-			role = "refinery"
-		}
-	} else if beadID == "gt-mayor" {
-		actor = "mayor"
-		role = "mayor"
-	} else if beadID == "gt-deacon" {
-		actor = "deacon"
-		role = "deacon"
-	} else if strings.HasPrefix(beadID, "gt-polecat-") {
-		parts := strings.Split(beadID, "-")
-		if len(parts) >= 3 {
-			rig = parts[2]
-			actor = strings.Join(parts[2:], "-")
-			role = "polecat"
+	case "polecat":
+		if name != "" {
+			actor = parsedRig + "/" + name
+		} else {
+			actor = parsedRole
 		}
 	}
 

@@ -84,9 +84,9 @@ func (m *Manager) assigneeID(name string) string {
 }
 
 // agentBeadID returns the agent bead ID for a polecat.
-// Format: "gt-polecat-<rig>-<name>" (e.g., "gt-polecat-gastown-Toast")
+// Format: "gt-<rig>-polecat-<name>" (e.g., "gt-gastown-polecat-Toast")
 func (m *Manager) agentBeadID(name string) string {
-	return fmt.Sprintf("gt-polecat-%s-%s", m.rig.Name, name)
+	return beads.PolecatBeadID(m.rig.Name, name)
 }
 
 // getCleanupStatusFromBead reads the cleanup_status from the polecat's agent bead.

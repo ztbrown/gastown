@@ -632,11 +632,11 @@ func runSlingFormula(args []string) error {
 // This enables the witness to see what each agent is working on.
 func updateAgentHookBead(agentID, beadID string) {
 	// Convert agent ID to agent bead ID
-	// Format examples:
-	//   gastown/crew/max -> gt-crew-gastown-max
-	//   gastown/polecats/Toast -> gt-polecat-gastown-Toast
+	// Format examples (canonical: prefix-rig-role-name):
+	//   gastown/crew/max -> gt-gastown-crew-max
+	//   gastown/polecats/Toast -> gt-gastown-polecat-Toast
 	//   mayor -> gt-mayor
-	//   gastown/witness -> gt-witness-gastown
+	//   gastown/witness -> gt-gastown-witness
 	agentBeadID := agentIDToBeadID(agentID)
 	if agentBeadID == "" {
 		return
@@ -673,13 +673,14 @@ func wakeRigAgents(rigName string) {
 }
 
 // agentIDToBeadID converts an agent ID to its corresponding agent bead ID.
+// Uses canonical naming: prefix-rig-role-name
 func agentIDToBeadID(agentID string) string {
 	// Handle simple cases
 	if agentID == "mayor" {
-		return "gt-mayor"
+		return beads.MayorBeadID()
 	}
 	if agentID == "deacon" {
-		return "gt-deacon"
+		return beads.DeaconBeadID()
 	}
 
 	// Parse path-style agent IDs
@@ -692,13 +693,13 @@ func agentIDToBeadID(agentID string) string {
 
 	switch {
 	case len(parts) == 2 && parts[1] == "witness":
-		return fmt.Sprintf("gt-witness-%s", rig)
+		return beads.WitnessBeadID(rig)
 	case len(parts) == 2 && parts[1] == "refinery":
-		return fmt.Sprintf("gt-refinery-%s", rig)
+		return beads.RefineryBeadID(rig)
 	case len(parts) == 3 && parts[1] == "crew":
-		return fmt.Sprintf("gt-crew-%s-%s", rig, parts[2])
+		return beads.CrewBeadID(rig, parts[2])
 	case len(parts) == 3 && parts[1] == "polecats":
-		return fmt.Sprintf("gt-polecat-%s-%s", rig, parts[2])
+		return beads.PolecatBeadID(rig, parts[2])
 	default:
 		return ""
 	}

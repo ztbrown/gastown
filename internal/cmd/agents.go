@@ -143,7 +143,7 @@ func categorizeSession(name string) *AgentSession {
 		return session
 	}
 
-	// Witness sessions use different format: gt-witness-<rig>
+	// Witness sessions: legacy format gt-witness-<rig> (fallback)
 	if strings.HasPrefix(suffix, "witness-") {
 		session.Type = AgentWitness
 		session.Rig = strings.TrimPrefix(suffix, "witness-")

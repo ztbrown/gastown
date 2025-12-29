@@ -81,7 +81,7 @@ func runCrewAdd(cmd *cobra.Command, args []string) error {
 	// Create agent bead for the crew worker
 	rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
 	bd := beads.New(rigBeadsPath)
-	crewID := fmt.Sprintf("gt-crew-%s-%s", rigName, name)
+	crewID := beads.CrewBeadID(rigName, name)
 	if _, err := bd.Show(crewID); err != nil {
 		// Agent bead doesn't exist, create it
 		fields := &beads.AgentFields{

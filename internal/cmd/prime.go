@@ -1137,31 +1137,32 @@ func getAgentFields(ctx RoleContext, state string) *beads.AgentFields {
 }
 
 // getAgentBeadID returns the agent bead ID for the current role.
+// Uses canonical naming: prefix-rig-role-name
 // Returns empty string for unknown roles.
 func getAgentBeadID(ctx RoleContext) string {
 	switch ctx.Role {
 	case RoleMayor:
-		return "gt-mayor"
+		return beads.MayorBeadID()
 	case RoleDeacon:
-		return "gt-deacon"
+		return beads.DeaconBeadID()
 	case RoleWitness:
 		if ctx.Rig != "" {
-			return fmt.Sprintf("gt-witness-%s", ctx.Rig)
+			return beads.WitnessBeadID(ctx.Rig)
 		}
 		return ""
 	case RoleRefinery:
 		if ctx.Rig != "" {
-			return fmt.Sprintf("gt-refinery-%s", ctx.Rig)
+			return beads.RefineryBeadID(ctx.Rig)
 		}
 		return ""
 	case RolePolecat:
 		if ctx.Rig != "" && ctx.Polecat != "" {
-			return fmt.Sprintf("gt-polecat-%s-%s", ctx.Rig, ctx.Polecat)
+			return beads.PolecatBeadID(ctx.Rig, ctx.Polecat)
 		}
 		return ""
 	case RoleCrew:
 		if ctx.Rig != "" && ctx.Polecat != "" {
-			return fmt.Sprintf("gt-crew-%s-%s", ctx.Rig, ctx.Polecat)
+			return beads.CrewBeadID(ctx.Rig, ctx.Polecat)
 		}
 		return ""
 	default:
