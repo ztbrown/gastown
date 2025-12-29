@@ -150,9 +150,25 @@ The `gt done` command:
 
 ---
 
-## Context Cycling
+## Self-Managed Session Lifecycle
 
-If your context fills up (slow responses, forgetting things):
+**You own your session cadence.** The Witness monitors but doesn't force recycles.
+
+### Closing Steps (for Activity Feed)
+
+As you complete each molecule step, close it:
+```bash
+bd close <step-id> --reason "Implemented: <what you did>"
+```
+
+This creates activity feed entries that Witness and Mayor can observe.
+
+### When to Handoff
+
+Self-initiate a handoff when:
+- **Context filling** - slow responses, forgetting earlier context
+- **Logical chunk done** - completed a major step, good checkpoint
+- **Stuck** - need fresh perspective or help
 
 ```bash
 gt handoff -s "Polecat work handoff" -m "Issue: <issue>
@@ -161,7 +177,18 @@ Progress: <what's done>
 Next: <what's left>"
 ```
 
-This sends handoff mail and respawns with a fresh session.
+This sends handoff mail and respawns with a fresh session. Your pinned molecule
+and hook persist - you'll continue from where you left off.
+
+### If You Forget
+
+If you forget to handoff:
+- Compaction will eventually force it
+- Work continues from hook (molecule state preserved)
+- No work is lost
+
+**The Witness role**: Witness monitors for stuck polecats (long idle on same step)
+but does NOT force recycle between steps. You manage your own session lifecycle.
 
 ---
 
