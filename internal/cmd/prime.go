@@ -38,7 +38,7 @@ var primeCmd = &cobra.Command{
 	Long: `Detect the agent role from the current directory and output context.
 
 Role detection:
-  - Town root or mayor/rig/ → Mayor context
+  - Town root, mayor/, or <rig>/mayor/ → Mayor context
   - <rig>/witness/rig/ → Witness context
   - <rig>/refinery/rig/ → Refinery context
   - <rig>/polecats/<name>/ → Polecat context
@@ -185,6 +185,12 @@ func detectRole(cwd, townRoot string) RoleInfo {
 	}
 	rigName := parts[0]
 	ctx.Rig = rigName
+
+	// Check for mayor: <rig>/mayor/ or <rig>/mayor/rig/
+	if len(parts) >= 2 && parts[1] == "mayor" {
+		ctx.Role = RoleMayor
+		return ctx
+	}
 
 	// Check for witness: <rig>/witness/rig/
 	if len(parts) >= 2 && parts[1] == "witness" {
