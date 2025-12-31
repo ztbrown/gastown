@@ -24,6 +24,10 @@ var doctorCmd = &cobra.Command{
 Doctor checks for common configuration issues, missing files,
 and other problems that could affect workspace operation.
 
+Infrastructure checks:
+  - daemon                   Check if daemon is running (fixable)
+  - boot-health              Check Boot watchdog health (vet mode)
+
 Cleanup checks (fixable):
   - orphan-sessions          Detect orphaned tmux sessions
   - orphan-processes         Detect orphaned Claude processes
@@ -75,6 +79,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// Register built-in checks
 	d.Register(doctor.NewTownGitCheck())
 	d.Register(doctor.NewDaemonCheck())
+	d.Register(doctor.NewBootHealthCheck())
 	d.Register(doctor.NewBeadsDatabaseCheck())
 	d.Register(doctor.NewPrefixConflictCheck())
 	d.Register(doctor.NewRoutesCheck())
