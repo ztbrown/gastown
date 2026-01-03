@@ -122,6 +122,7 @@ func (f *LiveConvoyFetcher) getTrackedIssues(convoyID string) []trackedIssueInfo
 
 	// Query tracked dependencies from SQLite
 	safeConvoyID := strings.ReplaceAll(convoyID, "'", "''")
+	// #nosec G204 -- sqlite3 path is from trusted config, convoyID is escaped
 	queryCmd := exec.Command("sqlite3", "-json", dbPath,
 		fmt.Sprintf(`SELECT depends_on_id, type FROM dependencies WHERE issue_id = '%s' AND type = 'tracks'`, safeConvoyID))
 
@@ -200,6 +201,7 @@ func (f *LiveConvoyFetcher) getIssueDetailsBatch(issueIDs []string) map[string]*
 	args := append([]string{"show"}, issueIDs...)
 	args = append(args, "--json")
 
+	// #nosec G204 -- bd is a trusted internal tool, args are issue IDs
 	showCmd := exec.Command("bd", args...)
 	var stdout bytes.Buffer
 	showCmd.Stdout = &stdout
@@ -262,6 +264,7 @@ func (f *LiveConvoyFetcher) getWorkersForIssues(issueIDs []string) map[string]*w
 				`SELECT id, hook_bead, last_activity FROM issues WHERE issue_type = 'agent' AND status = 'open' AND hook_bead = '%s' LIMIT 1`,
 				safeID)
 
+			// #nosec G204 -- sqlite3 path is from trusted glob, issueID is escaped
 			queryCmd := exec.Command("sqlite3", "-json", dbPath, query)
 			var stdout bytes.Buffer
 			queryCmd.Stdout = &stdout
