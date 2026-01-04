@@ -25,6 +25,9 @@ Multi-agent orchestrator for Claude Code. Track work with convoys; sling to agen
 # Install
 go install github.com/steveyegge/gastown/cmd/gt@latest
 
+# Ensure Go binaries are in your PATH (add to ~/.zshrc or ~/.bashrc)
+export PATH="$PATH:$HOME/go/bin"
+
 # Create workspace (--git auto-initializes git repository)
 gt install ~/gt --git
 cd ~/gt
