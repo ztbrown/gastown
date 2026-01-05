@@ -691,6 +691,31 @@ func LoadOrCreateTownSettings(path string) (*TownSettings, error) {
 	return &settings, nil
 }
 
+// SaveTownSettings saves town settings to a file.
+func SaveTownSettings(path string, settings *TownSettings) error {
+	if settings.Type != "town-settings" && settings.Type != "" {
+		return fmt.Errorf("%w: expected type 'town-settings', got '%s'", ErrInvalidType, settings.Type)
+	}
+	if settings.Version > CurrentTownSettingsVersion {
+		return fmt.Errorf("%w: got %d, max supported %d", ErrInvalidVersion, settings.Version, CurrentTownSettingsVersion)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding settings: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil { //nolint:gosec // G306: settings files don't contain secrets
+		return fmt.Errorf("writing settings: %w", err)
+	}
+
+	return nil
+}
+
 // ResolveAgentConfig resolves the agent configuration for a rig.
 // It looks up the agent by name in town settings (custom agents) and built-in presets.
 //

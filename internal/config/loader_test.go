@@ -970,3 +970,133 @@ func TestLoadRuntimeConfigFallsBackToDefaults(t *testing.T) {
 		t.Errorf("Command = %q, want %q (default)", rc.Command, "claude")
 	}
 }
+
+func TestSaveTownSettings(t *testing.T) {
+	t.Run("saves valid town settings", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		settingsPath := filepath.Join(tmpDir, "settings", "config.json")
+
+		settings := &TownSettings{
+			Type:         "town-settings",
+			Version:      CurrentTownSettingsVersion,
+			DefaultAgent: "gemini",
+			Agents: map[string]*RuntimeConfig{
+				"my-agent": {
+					Command: "my-agent",
+					Args:    []string{"--arg1", "--arg2"},
+				},
+			},
+		}
+
+		err := SaveTownSettings(settingsPath, settings)
+		if err != nil {
+			t.Fatalf("SaveTownSettings failed: %v", err)
+		}
+
+		// Verify file exists
+		data, err := os.ReadFile(settingsPath)
+		if err != nil {
+			t.Fatalf("reading settings file: %v", err)
+		}
+
+		// Verify it contains expected content
+		content := string(data)
+		if !strings.Contains(content, `"type": "town-settings"`) {
+			t.Errorf("missing type field")
+		}
+		if !strings.Contains(content, `"default_agent": "gemini"`) {
+			t.Errorf("missing default_agent field")
+		}
+		if !strings.Contains(content, `"my-agent"`) {
+			t.Errorf("missing custom agent")
+		}
+	})
+
+	t.Run("creates parent directories", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		settingsPath := filepath.Join(tmpDir, "deeply", "nested", "settings", "config.json")
+
+		settings := NewTownSettings()
+
+		err := SaveTownSettings(settingsPath, settings)
+		if err != nil {
+			t.Fatalf("SaveTownSettings failed: %v", err)
+		}
+
+		// Verify file exists
+		if _, err := os.Stat(settingsPath); err != nil {
+			t.Errorf("settings file not created: %v", err)
+		}
+	})
+
+	t.Run("rejects invalid type", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		settingsPath := filepath.Join(tmpDir, "config.json")
+
+		settings := &TownSettings{
+			Type:    "invalid-type",
+			Version: CurrentTownSettingsVersion,
+		}
+
+		err := SaveTownSettings(settingsPath, settings)
+		if err == nil {
+			t.Error("expected error for invalid type")
+		}
+	})
+
+	t.Run("rejects unsupported version", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		settingsPath := filepath.Join(tmpDir, "config.json")
+
+		settings := &TownSettings{
+			Type:    "town-settings",
+			Version: CurrentTownSettingsVersion + 100,
+		}
+
+		err := SaveTownSettings(settingsPath, settings)
+		if err == nil {
+			t.Error("expected error for unsupported version")
+		}
+	})
+
+	t.Run("roundtrip save and load", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		settingsPath := filepath.Join(tmpDir, "config.json")
+
+		original := &TownSettings{
+			Type:         "town-settings",
+			Version:      CurrentTownSettingsVersion,
+			DefaultAgent: "codex",
+			Agents: map[string]*RuntimeConfig{
+				"custom-1": {
+					Command: "custom-agent",
+					Args:    []string{"--flag"},
+				},
+			},
+		}
+
+		err := SaveTownSettings(settingsPath, original)
+		if err != nil {
+			t.Fatalf("SaveTownSettings failed: %v", err)
+		}
+
+		loaded, err := LoadOrCreateTownSettings(settingsPath)
+		if err != nil {
+			t.Fatalf("LoadOrCreateTownSettings failed: %v", err)
+		}
+
+		if loaded.Type != original.Type {
+			t.Errorf("Type = %q, want %q", loaded.Type, original.Type)
+		}
+		if loaded.Version != original.Version {
+			t.Errorf("Version = %d, want %d", loaded.Version, original.Version)
+		}
+		if loaded.DefaultAgent != original.DefaultAgent {
+			t.Errorf("DefaultAgent = %q, want %q", loaded.DefaultAgent, original.DefaultAgent)
+		}
+
+		if len(loaded.Agents) != len(original.Agents) {
+			t.Errorf("Agents count = %d, want %d", len(loaded.Agents), len(original.Agents))
+		}
+	})
+}
