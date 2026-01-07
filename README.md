@@ -184,28 +184,47 @@ gt convoy list
 
 **Best for:** Predefined, repeatable processes
 
-Formulas are YAML-defined workflows stored in `.beads/formulas/`.
+Formulas are TOML-defined workflows stored in `.beads/formulas/`.
 
-**Example Formula** (`.beads/formulas/release.yaml`):
+**Example Formula** (`.beads/formulas/release.formula.toml`):
 
-```yaml
-formula: release
-description: Standard release process
-steps:
-  - name: bump-version
-    command: ./scripts/bump-version.sh {{version}}
+```toml
+description = "Standard release process"
+formula = "release"
+version = 1
 
-  - name: run-tests
-    command: make test
+[vars.version]
+description = "The semantic version to release (e.g., 1.2.0)"
+required = true
 
-  - name: build
-    command: make build
+[[steps]]
+id = "bump-version"
+title = "Bump version"
+description = "Run ./scripts/bump-version.sh {{version}}"
 
-  - name: create-tag
-    command: git tag -a v{{version}} -m "Release v{{version}}"
+[[steps]]
+id = "run-tests"
+title = "Run tests"
+description = "Run make test"
+needs = ["bump-version"]
 
-  - name: publish
-    command: ./scripts/publish.sh
+[[steps]]
+id = "build"
+title = "Build"
+description = "Run make build"
+needs = ["run-tests"]
+
+[[steps]]
+id = "create-tag"
+title = "Create release tag"
+description = "Run git tag -a v{{version}} -m 'Release v{{version}}'"
+needs = ["build"]
+
+[[steps]]
+id = "publish"
+title = "Publish"
+description = "Run ./scripts/publish.sh"
+needs = ["create-tag"]
 ```
 
 **Execute:**
