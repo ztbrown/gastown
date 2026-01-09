@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.3] - 2026-01-08
+## [0.2.3] - 2026-01-09
 
 Worker safety release - prevents accidental termination of active agents.
+
+> **Note**: The Deacon safety improvements are believed to be correct but have not
+> yet been extensively tested in production. We recommend running with
+> `gt deacon pause` initially and monitoring behavior before enabling full patrol.
+> Please report any issues. A 0.3.0 release will follow once these changes are
+> battle-tested.
 
 ### Critical Safety Improvements
 
