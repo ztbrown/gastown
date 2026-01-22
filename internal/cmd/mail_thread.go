@@ -82,6 +82,17 @@ func runMailThread(cmd *cobra.Command, args []string) error {
 func runMailReply(cmd *cobra.Command, args []string) error {
 	msgID := args[0]
 
+	// Get message body from positional arg or flag (positional takes precedence)
+	messageBody := mailReplyMessage
+	if len(args) > 1 {
+		messageBody = args[1]
+	}
+
+	// Validate message is provided
+	if messageBody == "" {
+		return fmt.Errorf("message body required: provide as second argument or use -m flag")
+	}
+
 	// All mail uses town beads (two-level architecture)
 	workDir, err := findMailWorkDir()
 	if err != nil {
@@ -118,7 +129,7 @@ func runMailReply(cmd *cobra.Command, args []string) error {
 		From:     from,
 		To:       original.From, // Reply to sender
 		Subject:  subject,
-		Body:     mailReplyMessage,
+		Body:     messageBody,
 		Type:     mail.TypeReply,
 		Priority: mail.PriorityNormal,
 		ReplyTo:  msgID,

@@ -268,7 +268,7 @@ Examples:
 }
 
 var mailReplyCmd = &cobra.Command{
-	Use:   "reply <message-id>",
+	Use:   "reply <message-id> [message]",
 	Short: "Reply to a message",
 	Long: `Reply to a specific message.
 
@@ -277,10 +277,13 @@ This is a convenience command that automatically:
 - Prefixes the subject with "Re: " (if not already present)
 - Sends to the original sender
 
+The message body can be provided as a positional argument or via -m flag.
+
 Examples:
+  gt mail reply msg-abc123 "Thanks, working on it now"
   gt mail reply msg-abc123 -m "Thanks, working on it now"
   gt mail reply msg-abc123 -s "Custom subject" -m "Reply body"`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: runMailReply,
 }
 
@@ -457,8 +460,7 @@ func init() {
 
 	// Reply flags
 	mailReplyCmd.Flags().StringVarP(&mailReplySubject, "subject", "s", "", "Override reply subject (default: Re: <original>)")
-	mailReplyCmd.Flags().StringVarP(&mailReplyMessage, "message", "m", "", "Reply message body (required)")
-	_ = mailReplyCmd.MarkFlagRequired("message")
+	mailReplyCmd.Flags().StringVarP(&mailReplyMessage, "message", "m", "", "Reply message body")
 
 	// Search flags
 	mailSearchCmd.Flags().StringVar(&mailSearchFrom, "from", "", "Filter by sender address")
