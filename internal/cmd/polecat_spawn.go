@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
@@ -158,6 +159,18 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 		}
 		if err := polecatSessMgr.Start(polecatName, startOpts); err != nil {
 			return nil, fmt.Errorf("starting session: %w", err)
+		}
+
+		// Wait for runtime to be fully ready before returning.
+		// This prevents callers from sending nudges during Claude's initialization
+		// phase, which would interrupt the agent and cause "Interrupted" prompts.
+		// Fixes: https://github.com/steveyegge/gastown/issues/470
+		runtimeConfig := config.LoadRuntimeConfig(r.Path)
+		sessionName := polecatSessMgr.SessionName(polecatName)
+		if err := t.WaitForRuntimeReady(sessionName, runtimeConfig, 30*time.Second); err != nil {
+			// Non-fatal: session started, just not fully initialized yet.
+			// Caller should handle this gracefully.
+			fmt.Printf("Warning: runtime may not be fully ready: %v\n", err)
 		}
 	}
 
