@@ -852,6 +852,50 @@ func (m *Manager) ReconcilePoolWith(namesWithDirs, namesWithSessions []string) {
 
 	m.namePool.Reconcile(namesWithDirs)
 	// Note: No Save() needed - InUse is transient state, only OverflowNext is persisted
+
+	// Clean up orphaned polecat state (fixes #698)
+	m.cleanupOrphanPolecatState()
+}
+
+// cleanupOrphanPolecatState removes partial/broken polecat state during allocation.
+// This handles the race condition where worktree creation fails mid-way, leaving:
+// - Empty polecat directories without .git
+// - Directories with invalid/corrupt .git files
+// - Stale git worktree registrations
+func (m *Manager) cleanupOrphanPolecatState() {
+	polecatsDir := filepath.Join(m.rig.Path, "polecats")
+
+	entries, err := os.ReadDir(polecatsDir)
+	if err != nil {
+		return // polecats dir doesn't exist, nothing to clean
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		name := entry.Name()
+		polecatDir := filepath.Join(polecatsDir, name)
+
+		// Check if this is a valid polecat with a working worktree
+		clonePath := filepath.Join(polecatDir, m.rig.Name)
+		gitPath := filepath.Join(clonePath, ".git")
+
+		// Check if clone directory exists
+		if _, err := os.Stat(clonePath); os.IsNotExist(err) {
+			// Empty polecat directory without clone - remove it
+			_ = os.RemoveAll(polecatDir)
+			continue
+		}
+
+		// Check if .git exists (file for worktree, or directory for full clone)
+		if _, err := os.Stat(gitPath); os.IsNotExist(err) {
+			// Clone exists but no .git - incomplete worktree, remove it
+			_ = os.RemoveAll(polecatDir)
+			continue
+		}
+	}
 }
 
 // PoolStatus returns information about the name pool.
