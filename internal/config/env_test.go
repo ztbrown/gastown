@@ -42,6 +42,7 @@ func TestAgentEnv_Polecat(t *testing.T) {
 		AgentName:     "Toast",
 		TownRoot:      "/town",
 		BeadsNoDaemon: true,
+		PolecatIndex:  0, // First polecat gets index 0
 	})
 
 	assertEnv(t, env, "GT_ROLE", "myrig/polecats/Toast") // compound format
@@ -51,6 +52,36 @@ func TestAgentEnv_Polecat(t *testing.T) {
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "Toast")
 	assertEnv(t, env, "BEADS_AGENT_NAME", "myrig/Toast")
 	assertEnv(t, env, "BEADS_NO_DAEMON", "1")
+	assertEnv(t, env, "GT_POLECAT_INDEX", "0") // First polecat
+}
+
+func TestAgentEnv_PolecatWithIndex(t *testing.T) {
+	t.Parallel()
+	env := AgentEnv(AgentEnvConfig{
+		Role:          "polecat",
+		Rig:           "myrig",
+		AgentName:     "Toast",
+		TownRoot:      "/town",
+		BeadsNoDaemon: true,
+		PolecatIndex:  3,
+	})
+
+	assertEnv(t, env, "GT_POLECAT_INDEX", "3")
+}
+
+func TestAgentEnv_PolecatIndexNegativeNotSet(t *testing.T) {
+	t.Parallel()
+	// Negative index means "not set" - GT_POLECAT_INDEX should not be in env
+	env := AgentEnv(AgentEnvConfig{
+		Role:          "polecat",
+		Rig:           "myrig",
+		AgentName:     "Toast",
+		TownRoot:      "/town",
+		BeadsNoDaemon: true,
+		PolecatIndex:  -1,
+	})
+
+	assertNotSet(t, env, "GT_POLECAT_INDEX")
 }
 
 func TestAgentEnv_Crew(t *testing.T) {

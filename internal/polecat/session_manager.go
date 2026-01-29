@@ -208,6 +208,10 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		command = config.PrependEnv(command, map[string]string{runtimeConfig.Session.ConfigDirEnv: opts.RuntimeConfigDir})
 	}
 
+	// Compute polecat index BEFORE creating session (count of existing sessions).
+	// This gives each polecat a unique index for port offsetting in parallel E2E tests.
+	polecatIndex := m.countActiveSessions()
+
 	// Create session with command directly to avoid send-keys race condition.
 	// See: https://github.com/anthropics/gastown/issues/280
 	if err := m.tmux.NewSessionWithCommand(sessionID, workDir, command); err != nil {
@@ -217,6 +221,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	// Set environment (non-fatal: session works without these)
 	// Use centralized AgentEnv for consistency across all role startup paths
 	townRoot := filepath.Dir(m.rig.Path)
+
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             "polecat",
 		Rig:              m.rig.Name,
@@ -224,6 +229,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		TownRoot:         townRoot,
 		RuntimeConfigDir: opts.RuntimeConfigDir,
 		BeadsNoDaemon:    true,
+		PolecatIndex:     polecatIndex,
 	})
 	for k, v := range envVars {
 		debugSession("SetEnvironment "+k, m.tmux.SetEnvironment(sessionID, k, v))
@@ -377,6 +383,24 @@ func (m *SessionManager) Status(polecat string) (*SessionInfo, error) {
 	}
 
 	return info, nil
+}
+
+// countActiveSessions returns the number of currently running polecat sessions.
+// This is used to compute GT_POLECAT_INDEX for new polecats.
+func (m *SessionManager) countActiveSessions() int {
+	sessions, err := m.tmux.ListSessions()
+	if err != nil {
+		return 0
+	}
+
+	prefix := fmt.Sprintf("gt-%s-", m.rig.Name)
+	count := 0
+	for _, sessionID := range sessions {
+		if strings.HasPrefix(sessionID, prefix) {
+			count++
+		}
+	}
+	return count
 }
 
 // List returns information about all polecat sessions for this rig.
