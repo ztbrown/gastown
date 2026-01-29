@@ -94,7 +94,7 @@ func (m *SessionManager) Start(dogName string, opts SessionStartOptions) error {
 	}
 	if running {
 		// Session exists - check if Claude is actually running
-		if m.tmux.IsClaudeRunning(sessionID) {
+		if m.tmux.IsAgentRunning(sessionID) {
 			return fmt.Errorf("%w: %s", ErrSessionRunning, sessionID)
 		}
 		// Zombie session - kill and recreate
