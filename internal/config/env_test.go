@@ -51,6 +51,26 @@ func TestAgentEnv_Polecat(t *testing.T) {
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "Toast")
 	assertEnv(t, env, "BEADS_AGENT_NAME", "myrig/Toast")
 	assertEnv(t, env, "BEADS_NO_DAEMON", "1")
+
+	// GT_POLECAT_INDEX should not be set when PolecatIndex is 0
+	if _, ok := env["GT_POLECAT_INDEX"]; ok {
+		t.Error("GT_POLECAT_INDEX should not be set when PolecatIndex is 0")
+	}
+}
+
+func TestAgentEnv_PolecatWithIndex(t *testing.T) {
+	t.Parallel()
+	env := AgentEnv(AgentEnvConfig{
+		Role:          "polecat",
+		Rig:           "myrig",
+		AgentName:     "Toast",
+		TownRoot:      "/town",
+		BeadsNoDaemon: true,
+		PolecatIndex:  42,
+	})
+
+	assertEnv(t, env, "GT_POLECAT", "Toast")
+	assertEnv(t, env, "GT_POLECAT_INDEX", "42")
 }
 
 func TestAgentEnv_Crew(t *testing.T) {

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/steveyegge/gastown/internal/util"
@@ -434,4 +436,33 @@ func (p *NamePool) Reset() {
 
 	p.InUse = make(map[string]bool)
 	p.OverflowNext = p.MaxSize + 1
+}
+
+// IndexForName returns a 1-based index for a polecat name.
+// For themed names, returns their position in the theme list (1 to MaxSize).
+// For overflow names (rigname-N format), returns N.
+// Returns 0 if the name is not recognized.
+// This index can be used for test isolation (e.g., allocating unique ports).
+func (p *NamePool) IndexForName(name string) int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	// Check themed names first
+	names := p.getNames()
+	for i, n := range names {
+		if n == name && i < p.MaxSize {
+			return i + 1 // 1-based index
+		}
+	}
+
+	// Check overflow name format: rigname-N
+	prefix := p.RigName + "-"
+	if strings.HasPrefix(name, prefix) {
+		numStr := strings.TrimPrefix(name, prefix)
+		if num, err := strconv.Atoi(numStr); err == nil && num > p.MaxSize {
+			return num
+		}
+	}
+
+	return 0
 }

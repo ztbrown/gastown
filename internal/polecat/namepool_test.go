@@ -525,3 +525,80 @@ func TestNamePool_ReservedNamesInCustomNames(t *testing.T) {
 		t.Errorf("expected alpha, beta, gamma to be allocated, got %v", allocated)
 	}
 }
+
+func TestNamePool_IndexForName(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "namepool-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	pool := NewNamePoolWithConfig(tmpDir, "gastown", "mad-max", nil, DefaultPoolSize)
+
+	tests := []struct {
+		name          string
+		expectedIndex int
+	}{
+		// Themed names get 1-based index
+		// Note: "witness" is at position 45 in the raw list but filtered as reserved,
+		// so all names after it shift down by 1. aqua-cola becomes 49 instead of 50.
+		{"furiosa", 1}, // First in mad-max theme
+		{"nux", 2},     // Second
+		{"slit", 3},    // Third
+		{"max", 20},    // 20th in the list
+
+		// Names after "witness" (index 45 in raw list) are shifted down
+		{"aqua-cola", 49}, // Was 50th, now 49th after witness filtered
+
+		// Overflow names (rigname-N format) return N
+		{"gastown-51", 51},
+		{"gastown-100", 100},
+		{"gastown-999", 999},
+
+		// Unknown names return 0
+		{"unknown", 0},
+		{"random-name", 0},
+		{"otherrig-51", 0}, // Different rig name
+
+		// Reserved names return 0 (they're filtered out)
+		{"witness", 0},
+	}
+
+	for _, tc := range tests {
+		index := pool.IndexForName(tc.name)
+		if index != tc.expectedIndex {
+			t.Errorf("IndexForName(%q) = %d, expected %d", tc.name, index, tc.expectedIndex)
+		}
+	}
+}
+
+func TestNamePool_IndexForName_CustomNames(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "namepool-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	custom := []string{"alpha", "beta", "gamma", "delta"}
+	pool := NewNamePoolWithConfig(tmpDir, "testrig", "", custom, 4)
+
+	tests := []struct {
+		name          string
+		expectedIndex int
+	}{
+		{"alpha", 1},
+		{"beta", 2},
+		{"gamma", 3},
+		{"delta", 4},
+		{"testrig-5", 5},  // Overflow
+		{"testrig-10", 10},
+		{"unknown", 0},
+	}
+
+	for _, tc := range tests {
+		index := pool.IndexForName(tc.name)
+		if index != tc.expectedIndex {
+			t.Errorf("IndexForName(%q) = %d, expected %d", tc.name, index, tc.expectedIndex)
+		}
+	}
+}

@@ -35,6 +35,11 @@ type AgentEnvConfig struct {
 	// BeadsNoDaemon sets BEADS_NO_DAEMON=1 if true
 	// Used for polecats that should bypass the beads daemon
 	BeadsNoDaemon bool
+
+	// PolecatIndex is the 1-based index of the polecat (1-50 for themed, 51+ for overflow).
+	// Used for test isolation (e.g., allocating unique ports per polecat).
+	// Only set for polecats; 0 means not set.
+	PolecatIndex int
 }
 
 // AgentEnv returns all environment variables for an agent based on the config.
@@ -79,6 +84,9 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		env["GT_POLECAT"] = cfg.AgentName
 		env["BD_ACTOR"] = fmt.Sprintf("%s/polecats/%s", cfg.Rig, cfg.AgentName)
 		env["GIT_AUTHOR_NAME"] = cfg.AgentName
+		if cfg.PolecatIndex > 0 {
+			env["GT_POLECAT_INDEX"] = fmt.Sprintf("%d", cfg.PolecatIndex)
+		}
 
 	case "crew":
 		env["GT_ROLE"] = fmt.Sprintf("%s/crew/%s", cfg.Rig, cfg.AgentName)

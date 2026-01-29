@@ -64,6 +64,10 @@ type SessionStartOptions struct {
 	// RuntimeConfigDir is resolved config directory for the runtime account.
 	// If set, this is injected as an environment variable.
 	RuntimeConfigDir string
+
+	// PolecatIndex is the 1-based index of the polecat for test isolation.
+	// Passed through to GT_POLECAT_INDEX environment variable.
+	PolecatIndex int
 }
 
 // SessionInfo contains information about a running polecat session.
@@ -224,6 +228,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		TownRoot:         townRoot,
 		RuntimeConfigDir: opts.RuntimeConfigDir,
 		BeadsNoDaemon:    true,
+		PolecatIndex:     opts.PolecatIndex,
 	})
 	for k, v := range envVars {
 		debugSession("SetEnvironment "+k, m.tmux.SetEnvironment(sessionID, k, v))

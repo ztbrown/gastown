@@ -208,9 +208,14 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 	t := tmux.NewTmux()
 	polecatSessMgr := polecat.NewSessionManager(t, r)
 
+	// Get polecat index for test isolation
+	polecatGit := git.NewGit(r.Path)
+	polecatMgr := polecat.NewManager(r, polecatGit, t)
+
 	fmt.Printf("Starting session for %s/%s...\n", s.RigName, s.PolecatName)
 	startOpts := polecat.SessionStartOptions{
 		RuntimeConfigDir: claudeConfigDir,
+		PolecatIndex:     polecatMgr.IndexForName(s.PolecatName),
 	}
 	if s.agent != "" {
 		cmd, err := config.BuildPolecatStartupCommandWithAgentOverride(s.RigName, s.PolecatName, r.Path, "", s.agent)
@@ -230,8 +235,6 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 	}
 
 	// Update agent state
-	polecatGit := git.NewGit(r.Path)
-	polecatMgr := polecat.NewManager(r, polecatGit, t)
 	if err := polecatMgr.SetAgentState(s.PolecatName, "working"); err != nil {
 		fmt.Printf("Warning: could not update agent state: %v\n", err)
 	}

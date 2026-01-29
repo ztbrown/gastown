@@ -1123,6 +1123,11 @@ func (d *Daemon) restartPolecatSession(rigName, polecatName, sessionName string)
 		return fmt.Errorf("creating session: %w", err)
 	}
 
+	// Compute polecat index for test isolation
+	namePool := polecat.NewNamePool(rigPath, rigName)
+	_ = namePool.Load() // non-fatal: state file may not exist
+	polecatIndex := namePool.IndexForName(polecatName)
+
 	// Set environment variables using centralized AgentEnv
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:          "polecat",
@@ -1130,6 +1135,7 @@ func (d *Daemon) restartPolecatSession(rigName, polecatName, sessionName string)
 		AgentName:     polecatName,
 		TownRoot:      d.config.TownRoot,
 		BeadsNoDaemon: true,
+		PolecatIndex:  polecatIndex,
 	})
 
 	// Set all env vars in tmux session (for debugging) and they'll also be exported to Claude

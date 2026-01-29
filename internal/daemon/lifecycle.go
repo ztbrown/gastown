@@ -13,6 +13,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
+	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -492,12 +493,18 @@ func (d *Daemon) getStartCommand(roleConfig *beads.RoleConfig, parsed *ParsedIde
 		if runtimeConfig.Session != nil {
 			sessionIDEnv = runtimeConfig.Session.SessionIDEnv
 		}
+		// Compute polecat index for test isolation
+		namePool := polecat.NewNamePool(rigPath, parsed.RigName)
+		_ = namePool.Load() // non-fatal: state file may not exist
+		polecatIndex := namePool.IndexForName(parsed.AgentName)
+
 		envVars := config.AgentEnv(config.AgentEnvConfig{
 			Role:         "polecat",
 			Rig:          parsed.RigName,
 			AgentName:    parsed.AgentName,
 			TownRoot:     d.config.TownRoot,
 			SessionIDEnv: sessionIDEnv,
+			PolecatIndex: polecatIndex,
 		})
 		return config.PrependEnv("exec "+runtimeConfig.BuildCommandWithPrompt(prompt), envVars)
 	}
@@ -523,12 +530,22 @@ func (d *Daemon) getStartCommand(roleConfig *beads.RoleConfig, parsed *ParsedIde
 // setSessionEnvironment sets environment variables for the tmux session.
 // Uses centralized AgentEnv for consistency, plus custom env vars from role config if available.
 func (d *Daemon) setSessionEnvironment(sessionName string, roleConfig *beads.RoleConfig, parsed *ParsedIdentity) {
+	// Compute polecat index for test isolation (only for polecats)
+	var polecatIndex int
+	if parsed.RoleType == "polecat" && parsed.RigName != "" {
+		rigPath := filepath.Join(d.config.TownRoot, parsed.RigName)
+		namePool := polecat.NewNamePool(rigPath, parsed.RigName)
+		_ = namePool.Load() // non-fatal: state file may not exist
+		polecatIndex = namePool.IndexForName(parsed.AgentName)
+	}
+
 	// Use centralized AgentEnv for base environment variables
 	envVars := config.AgentEnv(config.AgentEnvConfig{
-		Role:      parsed.RoleType,
-		Rig:       parsed.RigName,
-		AgentName: parsed.AgentName,
-		TownRoot:  d.config.TownRoot,
+		Role:         parsed.RoleType,
+		Rig:          parsed.RigName,
+		AgentName:    parsed.AgentName,
+		TownRoot:     d.config.TownRoot,
+		PolecatIndex: polecatIndex,
 	})
 	for k, v := range envVars {
 		_ = d.tmux.SetEnvironment(sessionName, k, v)
