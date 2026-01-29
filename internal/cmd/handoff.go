@@ -219,6 +219,17 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 	// If orphans still occur, the solution is to adjust the restart command to
 	// kill orphans at startup, not to kill ourselves before respawning.
 
+	// Check if pane's working directory exists (may have been deleted)
+	paneWorkDir, _ := t.GetPaneWorkDir(currentSession)
+	if paneWorkDir != "" {
+		if _, err := os.Stat(paneWorkDir); err != nil {
+			if townRoot := detectTownRootFromCwd(); townRoot != "" {
+				style.PrintWarning("pane working directory deleted, using town root")
+				return t.RespawnPaneWithWorkDir(pane, townRoot, restartCmd)
+			}
+		}
+	}
+
 	// Use respawn-pane -k to atomically kill current process and start new one
 	// Note: respawn-pane automatically resets remain-on-exit to off
 	return t.RespawnPane(pane, restartCmd)
@@ -598,10 +609,21 @@ func handoffRemoteSession(t *tmux.Tmux, targetSession, restartCmd string) error 
 		style.PrintWarning("could not clear history: %v", err)
 	}
 
-	// Respawn the remote session's pane
-	// Note: respawn-pane automatically resets remain-on-exit to off
-	if err := t.RespawnPane(targetPane, restartCmd); err != nil {
-		return fmt.Errorf("respawning pane: %w", err)
+	// Respawn the remote session's pane, handling deleted working directories
+	respawnErr := func() error {
+		paneWorkDir, _ := t.GetPaneWorkDir(targetSession)
+		if paneWorkDir != "" {
+			if _, statErr := os.Stat(paneWorkDir); statErr != nil {
+				if townRoot := detectTownRootFromCwd(); townRoot != "" {
+					style.PrintWarning("pane working directory deleted, using town root")
+					return t.RespawnPaneWithWorkDir(targetPane, townRoot, restartCmd)
+				}
+			}
+		}
+		return t.RespawnPane(targetPane, restartCmd)
+	}()
+	if respawnErr != nil {
+		return fmt.Errorf("respawning pane: %w", respawnErr)
 	}
 
 	// If --watch, switch to that session
