@@ -201,6 +201,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 	var hookSetAtomically bool          // True if hook was set during polecat spawn (skip redundant update)
 	var willSpawn bool                  // True if polecat/dog spawning will occur (validates spawning flags)
 	var delayedDogInfo *DogDispatchInfo // For delayed dog session start after hook is set
+	var newPolecatInfo *SpawnedPolecatInfo // Spawned polecat info (session started after bead setup)
 
 	if len(args) > 1 {
 		target := args[1]
@@ -268,7 +269,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("spawning polecat: %w", spawnErr)
 				}
 				targetAgent = spawnInfo.AgentID()
-				targetPane = spawnInfo.Pane
+				newPolecatInfo = spawnInfo      // Store for later session start
 				hookWorkDir = spawnInfo.ClonePath // Run bd commands from polecat's worktree
 				hookSetAtomically = true          // Hook was set during spawn (GH #gt-mzyk5)
 
@@ -301,7 +302,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 							return fmt.Errorf("spawning polecat to replace dead polecat: %w", spawnErr)
 						}
 						targetAgent = spawnInfo.AgentID()
-						targetPane = spawnInfo.Pane
+						newPolecatInfo = spawnInfo // Store for later session start
 						hookWorkDir = spawnInfo.ClonePath
 						hookSetAtomically = true // Hook was set during spawn (GH #gt-mzyk5)
 
@@ -606,8 +607,22 @@ func runSling(cmd *cobra.Command, args []string) error {
 		targetPane = pane
 	}
 
+	// Start polecat session now that attached_molecule is set.
+	// This ensures polecat sees the molecule when gt prime runs on session start.
+	freshlySpawned := newPolecatInfo != nil
+	if freshlySpawned {
+		pane, err := newPolecatInfo.StartSession()
+		if err != nil {
+			return fmt.Errorf("starting polecat session: %w", err)
+		}
+		targetPane = pane
+	}
+
 	// Try to inject the "start now" prompt (graceful if no tmux)
-	if targetPane == "" {
+	// Skip for freshly spawned polecats - SessionManager.Start() already sent StartupNudge.
+	if freshlySpawned {
+		// Fresh polecat already got StartupNudge from SessionManager.Start()
+	} else if targetPane == "" {
 		fmt.Printf("%s No pane to nudge (agent will discover work via gt prime)\n", style.Dim.Render("○"))
 	} else {
 		// Ensure agent is ready before nudging (prevents race condition where

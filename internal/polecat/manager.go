@@ -1011,6 +1011,15 @@ func (m *Manager) Get(name string) (*Polecat, error) {
 // SetState updates a polecat's state.
 // In the beads model, state is derived from issue status:
 // - StateWorking/StateActive: issue status set to in_progress
+// SetAgentState updates the agent bead's agent_state field.
+// This is called after a polecat session successfully starts to transition
+// from "spawning" to "working", making gt polecat identity show accurate status.
+// Valid states: "spawning", "working", "done", "stuck", "idle"
+func (m *Manager) SetAgentState(name string, state string) error {
+	agentID := m.agentBeadID(name)
+	return m.beads.UpdateAgentState(agentID, state, nil)
+}
+
 // - StateDone: assignee cleared from issue (polecat ready for cleanup)
 // - StateStuck: issue status set to blocked (if supported)
 // If beads is not available, this is a no-op.
