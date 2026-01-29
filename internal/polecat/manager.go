@@ -627,6 +627,15 @@ func (m *Manager) AllocateName() (string, error) {
 	return name, nil
 }
 
+// IndexForName returns a 1-based index for a polecat name.
+// This index is used for test isolation (e.g., allocating unique ports).
+// For themed names, returns their position in the theme list (1 to 50).
+// For overflow names (rigname-N format), returns N.
+// Returns 0 if the name is not recognized.
+func (m *Manager) IndexForName(name string) int {
+	return m.namePool.IndexForName(name)
+}
+
 // ReleaseName releases a name back to the pool.
 // This is called when a polecat is removed.
 func (m *Manager) ReleaseName(name string) {

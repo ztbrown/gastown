@@ -134,6 +134,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 		fmt.Printf("Starting session for %s/%s...\n", rigName, polecatName)
 		startOpts := polecat.SessionStartOptions{
 			RuntimeConfigDir: claudeConfigDir,
+			PolecatIndex:     polecatMgr.IndexForName(polecatName),
 		}
 		if opts.Agent != "" {
 			cmd, err := config.BuildPolecatStartupCommandWithAgentOverride(rigName, polecatName, r.Path, "", opts.Agent)
