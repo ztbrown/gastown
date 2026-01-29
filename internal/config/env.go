@@ -36,7 +36,9 @@ type AgentEnvConfig struct {
 	// Used for polecats that should bypass the beads daemon
 	BeadsNoDaemon bool
 
-	// PolecatIndex is the 1-based index of the polecat (1-50 for themed, 51+ for overflow).
+	// PolecatIndex is the 1-based index of the polecat.
+	// Themed names get indices 1 to MaxSize (typically 49 after reserved names filtered).
+	// Overflow names (rigname-N) get index N.
 	// Used for test isolation (e.g., allocating unique ports per polecat).
 	// Only set for polecats; 0 means not set.
 	PolecatIndex int
