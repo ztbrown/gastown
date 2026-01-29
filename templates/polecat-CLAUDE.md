@@ -212,13 +212,13 @@ you (you don't exist anymore).
 
 ### No PRs in Maintainer Repos
 
-If the remote origin is `steveyegge/beads` or `steveyegge/gastown`:
+If you have push access to the remote origin (you're a maintainer or owner):
 - **NEVER create GitHub PRs** - you have direct push access
 - Polecats: use `gt done` → Refinery merges to main
 - Crew workers: push directly to main
 
 PRs are for external contributors submitting to repos they don't own.
-Check `git remote -v` if unsure about repo ownership.
+Check `git remote -v` and your GitHub permissions if unsure about repo access.
 
 ### The Landing Rule
 
