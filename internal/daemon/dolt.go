@@ -308,21 +308,22 @@ func (m *DoltServerManager) startLocked() error {
 func (m *DoltServerManager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.stopLocked()
+	m.stopLocked()
+	return nil
 }
 
 // stopLocked stops the Dolt server. Must be called with m.mu held.
-func (m *DoltServerManager) stopLocked() error {
+func (m *DoltServerManager) stopLocked() {
 	pid, running := m.isRunning()
 	if !running {
-		return nil
+		return
 	}
 
 	m.logger("Stopping Dolt SQL server (PID %d)...", pid)
 
 	process, err := os.FindProcess(pid)
 	if err != nil {
-		return nil // Already gone
+		return // Already gone
 	}
 
 	// Send termination signal for graceful shutdown
@@ -354,8 +355,6 @@ func (m *DoltServerManager) stopLocked() error {
 	// Clean up
 	_ = os.Remove(m.pidFile())
 	m.process = nil
-
-	return nil
 }
 
 // checkHealth checks if the Dolt server is healthy (can accept connections).
