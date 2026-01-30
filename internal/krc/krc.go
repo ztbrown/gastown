@@ -350,6 +350,7 @@ func (p *Pruner) pruneFile(filePath string) (result *PruneResult, err error) {
 
 	// Close files before rename
 <<<<<<< HEAD
+<<<<<<< HEAD
 	if err := tmpFile.Close(); err != nil {
 		tmpClosed = true
 		return nil, err
@@ -360,6 +361,10 @@ func (p *Pruner) pruneFile(filePath string) (result *PruneResult, err error) {
 		return nil, err
 	}
 	srcClosed = true
+=======
+	_ = srcFile.Close()
+	_ = tmpFile.Close()
+>>>>>>> d44c6764 (fix(lint): address errcheck, gosec, and unparam warnings)
 =======
 	_ = srcFile.Close()
 	_ = tmpFile.Close()
