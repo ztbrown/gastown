@@ -350,7 +350,9 @@ func (p *Pruner) pruneFile(filePath string) (result *PruneResult, err error) {
 
 	// Close files before rename
 	_ = srcFile.Close()
+	srcClosed = true
 	_ = tmpFile.Close()
+	tmpClosed = true
 
 	// Atomic replace
 	if err := os.Rename(tmpPath, filePath); err != nil {
