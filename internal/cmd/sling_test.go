@@ -1133,17 +1133,15 @@ exit /b 0
 		t.Fatalf("read bd log: %v", err)
 	}
 
-	// Look for update command that includes no_merge in description
-	logLines := strings.Split(string(logBytes), "\n")
-	foundNoMerge := false
-	for _, line := range logLines {
-		if strings.Contains(line, "update") && strings.Contains(line, "no_merge") {
-			foundNoMerge = true
-			break
-		}
-	}
+	// Look for a bd update command whose --description= includes no_merge.
+	// The description value may contain newlines (e.g., "dispatched_by: mayor\nno_merge: true"),
+	// so the log entry spans multiple lines. We check that an update --description line
+	// is followed by (or contains) "no_merge" in the log output.
+	logContent := string(logBytes)
+	foundUpdateDesc := strings.Contains(logContent, "update") && strings.Contains(logContent, "--description=")
+	foundNoMerge := strings.Contains(logContent, "no_merge: true")
 
-	if !foundNoMerge {
-		t.Errorf("--no-merge flag not stored in bead description\nLog:\n%s", string(logBytes))
+	if !foundUpdateDesc || !foundNoMerge {
+		t.Errorf("--no-merge flag not stored in bead description\nLog:\n%s", logContent)
 	}
 }

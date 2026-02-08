@@ -592,40 +592,24 @@ func runSling(cmd *cobra.Command, args []string) error {
 		updateAgentHookBead(targetAgent, beadID, hookWorkDir, townBeadsDir)
 	}
 
-	// Store dispatcher in bead description (enables completion notification to dispatcher)
-	if err := storeDispatcherInBead(beadID, actor); err != nil {
-		// Warn but don't fail - polecat will still complete work
-		fmt.Printf("%s Could not store dispatcher in bead: %v\n", style.Dim.Render("Warning:"), err)
+	// Store all attachment fields in a single read-modify-write cycle.
+	// This eliminates the race condition where sequential independent updates
+	// (dispatcher, args, no_merge, attached_molecule) could overwrite each other.
+	fieldUpdates := beadFieldUpdates{
+		Dispatcher:       actor,
+		Args:             slingArgs,
+		AttachedMolecule: attachedMoleculeID,
+		NoMerge:          slingNoMerge,
 	}
-
-	// Store args in bead description (no-tmux mode: beads as data plane)
-	if slingArgs != "" {
-		if err := storeArgsInBead(beadID, slingArgs); err != nil {
-			// Warn but don't fail - args will still be in the nudge prompt
-			fmt.Printf("%s Could not store args in bead: %v\n", style.Dim.Render("Warning:"), err)
-		} else {
+	if err := storeFieldsInBead(beadID, fieldUpdates); err != nil {
+		// Warn but don't fail - polecat will still complete work
+		fmt.Printf("%s Could not store fields in bead: %v\n", style.Dim.Render("Warning:"), err)
+	} else {
+		if slingArgs != "" {
 			fmt.Printf("%s Args stored in bead (durable)\n", style.Bold.Render("✓"))
 		}
-	}
-
-	// Store no_merge flag in bead (skips merge queue on completion)
-	if slingNoMerge {
-		if err := storeNoMergeInBead(beadID, true); err != nil {
-			fmt.Printf("%s Could not store no_merge in bead: %v\n", style.Dim.Render("Warning:"), err)
-		} else {
+		if slingNoMerge {
 			fmt.Printf("%s No-merge mode enabled (work stays on feature branch)\n", style.Bold.Render("✓"))
-		}
-	}
-
-	// Record the attached molecule in the BASE bead's description.
-	// This field points to the wisp (compound root) and enables:
-	// - gt hook/gt prime: follow attached_molecule to show molecule steps
-	// - gt done: close attached_molecule (wisp) before closing hooked bead
-	// - Compound resolution: base bead -> attached_molecule -> wisp
-	if attachedMoleculeID != "" {
-		if err := storeAttachedMoleculeInBead(beadID, attachedMoleculeID); err != nil {
-			// Warn but don't fail - polecat can still work through steps
-			fmt.Printf("%s Could not store attached_molecule: %v\n", style.Dim.Render("Warning:"), err)
 		}
 	}
 

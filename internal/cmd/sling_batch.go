@@ -171,30 +171,18 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 		// Update agent bead state
 		updateAgentHookBead(targetAgent, beadToHook, hookWorkDir, townBeadsDir)
 
-		// Store dispatcher in bead (enables completion notification to dispatcher)
-		if err := storeDispatcherInBead(beadID, actor); err != nil {
-			fmt.Printf("  %s Could not store dispatcher in bead: %v\n", style.Dim.Render("Warning:"), err)
+		// Store all attachment fields in a single read-modify-write cycle.
+		// This eliminates the race condition where sequential independent updates
+		// could overwrite each other under concurrent access.
+		fieldUpdates := beadFieldUpdates{
+			Dispatcher:       actor,
+			Args:             slingArgs,
+			AttachedMolecule: attachedMoleculeID,
+			NoMerge:          slingNoMerge,
 		}
-
-		// Store no_merge flag in bead (skips merge queue on completion)
-		if slingNoMerge {
-			if err := storeNoMergeInBead(beadID, true); err != nil {
-				fmt.Printf("  %s Could not store no_merge in bead: %v\n", style.Dim.Render("Warning:"), err)
-			}
-		}
-
-		// Store attached molecule in the hooked bead
-		if attachedMoleculeID != "" {
-			if err := storeAttachedMoleculeInBead(beadToHook, attachedMoleculeID); err != nil {
-				fmt.Printf("  %s Could not store attached_molecule: %v\n", style.Dim.Render("Warning:"), err)
-			}
-		}
-
-		// Store args if provided
-		if slingArgs != "" {
-			if err := storeArgsInBead(beadID, slingArgs); err != nil {
-				fmt.Printf("  %s Could not store args: %v\n", style.Dim.Render("Warning:"), err)
-			}
+		// Use beadToHook for the update target (may differ from beadID when formula-on-bead)
+		if err := storeFieldsInBead(beadToHook, fieldUpdates); err != nil {
+			fmt.Printf("  %s Could not store fields in bead: %v\n", style.Dim.Render("Warning:"), err)
 		}
 
 		// Start polecat session now that molecule/bead is attached.

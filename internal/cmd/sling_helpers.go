@@ -111,127 +111,36 @@ func getBeadInfo(beadID string) (*beadInfo, error) {
 	return &infos[0], nil
 }
 
-// storeArgsInBead stores args in the bead's description using attached_args field.
-// This enables no-tmux mode where agents discover args via gt prime / bd show.
-func storeArgsInBead(beadID, args string) error {
-	// Get the bead to preserve existing description content
-	showCmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
-	showCmd.Dir = resolveBeadDir(beadID)
-	out, err := showCmd.Output()
-	if err != nil {
-		return fmt.Errorf("fetching bead: %w", err)
-	}
-	if len(out) == 0 {
-		return fmt.Errorf("bead not found")
-	}
-
-	// Parse the bead
-	var issues []beads.Issue
-	if err := json.Unmarshal(out, &issues); err != nil {
-		if os.Getenv("GT_TEST_ATTACHED_MOLECULE_LOG") == "" {
-			return fmt.Errorf("parsing bead: %w", err)
-		}
-	}
-	issue := &beads.Issue{}
-	if len(issues) > 0 {
-		issue = &issues[0]
-	} else if os.Getenv("GT_TEST_ATTACHED_MOLECULE_LOG") == "" {
-		return fmt.Errorf("bead not found")
-	}
-
-	// Get or create attachment fields
-	fields := beads.ParseAttachmentFields(issue)
-	if fields == nil {
-		fields = &beads.AttachmentFields{}
-	}
-
-	// Set the args
-	fields.AttachedArgs = args
-
-	// Update the description
-	newDesc := beads.SetAttachmentFields(issue, fields)
-	if logPath := os.Getenv("GT_TEST_ATTACHED_MOLECULE_LOG"); logPath != "" {
-		_ = os.WriteFile(logPath, []byte(newDesc), 0644)
-	}
-
-	// Update the bead
-	updateCmd := exec.Command("bd", "update", beadID, "--description="+newDesc)
-	updateCmd.Stderr = os.Stderr
-	if err := updateCmd.Run(); err != nil {
-		return fmt.Errorf("updating bead description: %w", err)
-	}
-
-	return nil
+// beadFieldUpdates holds all the fields that need to be stored in a bead's description.
+// This enables a single read-modify-write cycle instead of sequential independent updates,
+// eliminating the race condition where concurrent writers could overwrite each other's fields.
+type beadFieldUpdates struct {
+	Dispatcher       string // Agent that dispatched the work
+	Args             string // Natural language instructions
+	AttachedMolecule string // Wisp root ID
+	NoMerge          bool   // Skip merge queue on completion
 }
 
-// storeDispatcherInBead stores the dispatcher agent ID in the bead's description.
-// This enables polecats to notify the dispatcher when work is complete.
-func storeDispatcherInBead(beadID, dispatcher string) error {
-	if dispatcher == "" {
-		return nil
-	}
-
-	// Get the bead to preserve existing description content
-	showCmd := exec.Command("bd", "show", beadID, "--json")
-	out, err := showCmd.Output()
-	if err != nil {
-		return fmt.Errorf("fetching bead: %w", err)
-	}
-
-	// Parse the bead
-	var issues []beads.Issue
-	if err := json.Unmarshal(out, &issues); err != nil {
-		return fmt.Errorf("parsing bead: %w", err)
-	}
-	if len(issues) == 0 {
-		return fmt.Errorf("bead not found")
-	}
-	issue := &issues[0]
-
-	// Get or create attachment fields
-	fields := beads.ParseAttachmentFields(issue)
-	if fields == nil {
-		fields = &beads.AttachmentFields{}
-	}
-
-	// Set the dispatcher
-	fields.DispatchedBy = dispatcher
-
-	// Update the description
-	newDesc := beads.SetAttachmentFields(issue, fields)
-
-	// Update the bead
-	updateCmd := exec.Command("bd", "update", beadID, "--description="+newDesc)
-	updateCmd.Stderr = os.Stderr
-	if err := updateCmd.Run(); err != nil {
-		return fmt.Errorf("updating bead description: %w", err)
-	}
-
-	return nil
-}
-
-// storeAttachedMoleculeInBead sets the attached_molecule field in a bead's description.
-// This is required for gt hook to recognize that a molecule is attached to the bead.
-// Called after bonding a formula wisp to a bead via "gt sling <formula> --on <bead>".
-func storeAttachedMoleculeInBead(beadID, moleculeID string) error {
-	if moleculeID == "" {
-		return nil
-	}
+// storeFieldsInBead performs a single read-modify-write to update all attachment fields
+// in a bead's description atomically. This replaces the sequential storeDispatcherInBead,
+// storeArgsInBead, storeAttachedMoleculeInBead, and storeNoMergeInBead calls that each
+// independently read-modify-write and could race under concurrent access.
+func storeFieldsInBead(beadID string, updates beadFieldUpdates) error {
 	logPath := os.Getenv("GT_TEST_ATTACHED_MOLECULE_LOG")
-	if logPath != "" {
-		_ = os.WriteFile(logPath, []byte("called"), 0644)
-	}
 
 	issue := &beads.Issue{}
 	if logPath == "" {
-		// Get the bead to preserve existing description content
-		showCmd := exec.Command("bd", "show", beadID, "--json")
+		// Read the bead once
+		showCmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
+		showCmd.Dir = resolveBeadDir(beadID)
 		out, err := showCmd.Output()
 		if err != nil {
 			return fmt.Errorf("fetching bead: %w", err)
 		}
+		if len(out) == 0 {
+			return fmt.Errorf("bead not found")
+		}
 
-		// Parse the bead
 		var issues []beads.Issue
 		if err := json.Unmarshal(out, &issues); err != nil {
 			return fmt.Errorf("parsing bead: %w", err)
@@ -248,67 +157,31 @@ func storeAttachedMoleculeInBead(beadID, moleculeID string) error {
 		fields = &beads.AttachmentFields{}
 	}
 
-	// Set the attached molecule
-	fields.AttachedMolecule = moleculeID
-	if fields.AttachedAt == "" {
-		fields.AttachedAt = time.Now().UTC().Format(time.RFC3339)
+	// Apply all updates in one pass
+	if updates.Dispatcher != "" {
+		fields.DispatchedBy = updates.Dispatcher
+	}
+	if updates.Args != "" {
+		fields.AttachedArgs = updates.Args
+	}
+	if updates.AttachedMolecule != "" {
+		fields.AttachedMolecule = updates.AttachedMolecule
+		if fields.AttachedAt == "" {
+			fields.AttachedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+	}
+	if updates.NoMerge {
+		fields.NoMerge = true
 	}
 
-	// Update the description
+	// Write back once
 	newDesc := beads.SetAttachmentFields(issue, fields)
 	if logPath != "" {
 		_ = os.WriteFile(logPath, []byte(newDesc), 0644)
-	}
-
-	// Update the bead
-	updateCmd := exec.Command("bd", "update", beadID, "--description="+newDesc)
-	updateCmd.Stderr = os.Stderr
-	if err := updateCmd.Run(); err != nil {
-		return fmt.Errorf("updating bead description: %w", err)
-	}
-
-	return nil
-}
-
-// storeNoMergeInBead sets the no_merge field in a bead's description.
-// When set, gt done will skip the merge queue and keep work on the feature branch.
-// This is useful for upstream contributions or when human review is needed before merge.
-func storeNoMergeInBead(beadID string, noMerge bool) error {
-	if !noMerge {
 		return nil
 	}
 
-	// Get the bead to preserve existing description content
-	showCmd := exec.Command("bd", "show", beadID, "--json")
-	out, err := showCmd.Output()
-	if err != nil {
-		return fmt.Errorf("fetching bead: %w", err)
-	}
-
-	// Parse the bead
-	var issues []beads.Issue
-	if err := json.Unmarshal(out, &issues); err != nil {
-		return fmt.Errorf("parsing bead: %w", err)
-	}
-	if len(issues) == 0 {
-		return fmt.Errorf("bead not found")
-	}
-	issue := &issues[0]
-
-	// Get or create attachment fields
-	fields := beads.ParseAttachmentFields(issue)
-	if fields == nil {
-		fields = &beads.AttachmentFields{}
-	}
-
-	// Set the no_merge flag
-	fields.NoMerge = true
-
-	// Update the description
-	newDesc := beads.SetAttachmentFields(issue, fields)
-
-	// Update the bead
-	updateCmd := exec.Command("bd", "update", beadID, "--description="+newDesc)
+	updateCmd := exec.Command("bd", "--no-daemon", "update", beadID, "--description="+newDesc)
 	updateCmd.Stderr = os.Stderr
 	if err := updateCmd.Run(); err != nil {
 		return fmt.Errorf("updating bead description: %w", err)
