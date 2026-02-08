@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -296,6 +297,133 @@ func TestRestartingFlag_PreventsConcurrentRestarts(t *testing.T) {
 	// All 5 should have returned nil (skipped because restarting=true)
 	if got := callCount.Load(); got != 5 {
 		t.Errorf("expected all 5 goroutines to return nil (skipped), got %d", got)
+	}
+}
+
+func TestStartLocked_SkipsIfAlreadyRunning(t *testing.T) {
+	// Verify that startLocked() re-checks isRunning() to close the TOCTOU window.
+	// If the server is already running (m.process is alive), startLocked() should
+	// return nil without attempting to start a second instance.
+	tmpDir := t.TempDir()
+	daemonDir := filepath.Join(tmpDir, "daemon")
+	if err := os.MkdirAll(daemonDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	var logMessages []string
+	m := &DoltServerManager{
+		config: &DoltServerConfig{
+			Enabled:  true,
+			Port:     13307,
+			Host:     "127.0.0.1",
+			DataDir:  filepath.Join(tmpDir, "dolt"),
+			LogFile:  filepath.Join(daemonDir, "dolt-server.log"),
+		},
+		townRoot: tmpDir,
+		logger: func(format string, v ...interface{}) {
+			logMessages = append(logMessages, fmt.Sprintf(format, v...))
+		},
+	}
+
+	// Set m.process to our own process so isRunning() returns true.
+	// Our own process is always alive.
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.process = self
+
+	// Call startLocked() with the mutex held (as the contract requires).
+	m.mu.Lock()
+	err = m.startLocked()
+	m.mu.Unlock()
+
+	if err != nil {
+		t.Fatalf("expected nil error when server already running, got: %v", err)
+	}
+
+	// Verify the skip was logged
+	found := false
+	for _, msg := range logMessages {
+		if msg == "Dolt server already running, skipping start" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'already running' log message, got: %v", logMessages)
+	}
+}
+
+func TestRestartWithBackoff_SkipsIfStartedDuringSleep(t *testing.T) {
+	// Verify that restartWithBackoff() re-checks isRunning() after the backoff
+	// sleep to detect if another goroutine started the server during the window.
+	tmpDir := t.TempDir()
+	daemonDir := filepath.Join(tmpDir, "daemon")
+	if err := os.MkdirAll(daemonDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	var logMessages []string
+	m := &DoltServerManager{
+		config: &DoltServerConfig{
+			Enabled:             true,
+			Port:                13308,
+			Host:                "127.0.0.1",
+			DataDir:             filepath.Join(tmpDir, "dolt"),
+			LogFile:             filepath.Join(daemonDir, "dolt-server.log"),
+			RestartDelay:        10 * time.Millisecond, // Short delay for testing
+			MaxRestartDelay:     100 * time.Millisecond,
+			MaxRestartsInWindow: 10,
+			RestartWindow:       10 * time.Minute,
+		},
+		townRoot: tmpDir,
+		logger: func(format string, v ...interface{}) {
+			logMessages = append(logMessages, fmt.Sprintf(format, v...))
+		},
+	}
+
+	// Simulate: during backoff sleep, another goroutine starts the server.
+	// We do this by launching restartWithBackoff in a goroutine and setting
+	// m.process while it's sleeping.
+	m.mu.Lock()
+
+	done := make(chan error, 1)
+	go func() {
+		// restartWithBackoff expects to be called with m.mu held
+		done <- m.restartWithBackoff()
+	}()
+
+	// Wait for the goroutine to release the lock during sleep
+	time.Sleep(5 * time.Millisecond)
+
+	// Simulate another goroutine starting the server by setting m.process
+	m.mu.Lock()
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.process = self
+	m.mu.Unlock()
+
+	// Wait for restartWithBackoff to complete
+	err = <-done
+
+	if err != nil {
+		t.Fatalf("expected nil error when server started during backoff, got: %v", err)
+	}
+
+	// Verify the skip was logged
+	found := false
+	for _, msg := range logMessages {
+		if msg == "Dolt server started by another goroutine during backoff, skipping" ||
+			msg == "Dolt server already running, skipping start" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected skip log message, got: %v", logMessages)
 	}
 }
 
