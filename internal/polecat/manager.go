@@ -1213,9 +1213,10 @@ func (m *Manager) List() ([]*Polecat, error) {
 }
 
 // Get returns a specific polecat by name.
-// State is derived from beads assignee field:
+// State is derived from beads assignee field + tmux session state:
 // - If an issue is assigned to this polecat: StateWorking
-// - If no issue assigned: StateDone (ready for cleanup - transient polecats should have work)
+// - If no issue but tmux session is running: StateWorking (session alive = still working)
+// - If no issue and no tmux session: StateDone (ready for cleanup)
 func (m *Manager) Get(name string) (*Polecat, error) {
 	if !m.exists(name) {
 		return nil, ErrPolecatNotFound
@@ -1332,9 +1333,11 @@ func (m *Manager) ClearIssue(name string) error {
 	return nil
 }
 
-// loadFromBeads gets polecat info from beads assignee field.
-// State is simple: issue assigned → working, no issue → done (ready for cleanup).
-// Transient polecats should always have work; no work means ready for Witness cleanup.
+// loadFromBeads gets polecat info from beads assignee field + tmux session state.
+// State derivation: issue assigned → working, no issue but session alive → working,
+// no issue and no session → done (ready for cleanup).
+// The tmux session check prevents false "done" status for actively running polecats
+// whose beads assignment hasn't been recorded yet or whose query returned empty.
 // We don't interpret issue status (ZFC: Go is transport, not decision-maker).
 func (m *Manager) loadFromBeads(name string) (*Polecat, error) {
 	// Use clonePath which handles both new (polecats/<name>/<rigname>/)
@@ -1364,13 +1367,21 @@ func (m *Manager) loadFromBeads(name string) (*Polecat, error) {
 		}, nil
 	}
 
-	// Transient model: has issue = working, no issue = done (ready for cleanup)
-	// Polecats without work should be nuked by the Witness
+	// Transient model: has issue = working, no issue = check tmux session.
+	// If tmux session is alive, the polecat is still actively working even
+	// if beads hasn't recorded an assignment yet (timing, query failure, etc.).
+	// Only mark as done when both beads says no issue AND no tmux session.
+	// Fixes: gt-o01h4l (polecat list shows 'done' for running polecats)
 	state := StateDone
 	issueID := ""
 	if issue != nil {
 		issueID = issue.ID
 		state = StateWorking
+	} else if m.tmux != nil {
+		sessionName := fmt.Sprintf("gt-%s-%s", m.rig.Name, name)
+		if running, _ := m.tmux.HasSession(sessionName); running {
+			state = StateWorking
+		}
 	}
 
 	return &Polecat{
