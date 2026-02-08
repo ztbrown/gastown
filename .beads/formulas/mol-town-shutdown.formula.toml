@@ -177,6 +177,10 @@ Shutdown reason: {{shutdown_reason}}
 ```
 """
 
+[vars]
+[vars.shutdown_reason]
+default = ""
+
 [[steps]]
 id = "restart-daemon"
 title = "Restart daemon"

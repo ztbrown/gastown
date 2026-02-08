@@ -247,3 +247,33 @@ Dog returns to available state in the pool.
 [vars.mode]
 description = "GC mode: 'conservative' or 'aggressive'"
 default = "conservative"
+
+[vars.age]
+default = ""
+
+[vars.bytes_freed]
+default = ""
+
+[vars.error]
+default = ""
+
+[vars.identifier]
+default = ""
+
+[vars.item]
+default = ""
+
+[vars.reason]
+default = ""
+
+[vars.report]
+default = ""
+
+[vars.timestamp]
+default = ""
+
+[vars.total_cleaned]
+default = ""
+
+[vars.type]
+default = ""

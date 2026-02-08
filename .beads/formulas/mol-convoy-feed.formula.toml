@@ -257,3 +257,33 @@ or retire the dog if pool is oversized.
 [vars.convoy]
 description = "The convoy ID to feed"
 required = true
+
+[vars.available_count]
+default = ""
+
+[vars.dispatch_count]
+default = ""
+
+[vars.error]
+default = ""
+
+[vars.error_count]
+default = ""
+
+[vars.issue_id]
+default = ""
+
+[vars.polecat]
+default = ""
+
+[vars.ready_count]
+default = ""
+
+[vars.report_summary]
+default = ""
+
+[vars.rig]
+default = ""
+
+[vars.title]
+default = ""

@@ -310,3 +310,54 @@ Dog returns to available state in the pool.
 description = "Scan scope: 'town' or specific rig name"
 required = true
 default = "town"
+
+[vars.action]
+default = ""
+
+[vars.action_summary]
+default = ""
+
+[vars.burn_count]
+default = ""
+
+[vars.escalate_count]
+default = ""
+
+[vars.escalations_section]
+default = ""
+
+[vars.id]
+default = ""
+
+[vars.issue_count]
+default = ""
+
+[vars.mol_count]
+default = ""
+
+[vars.reason]
+default = ""
+
+[vars.reassign_count]
+default = ""
+
+[vars.recover_count]
+default = ""
+
+[vars.report]
+default = ""
+
+[vars.reset_count]
+default = ""
+
+[vars.timestamp]
+default = ""
+
+[vars.total_count]
+default = ""
+
+[vars.type]
+default = ""
+
+[vars.wisp_count]
+default = ""

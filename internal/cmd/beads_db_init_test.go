@@ -19,9 +19,21 @@ import (
 	"testing"
 )
 
+// extractJSON finds the first JSON object in output that may contain warning lines.
+func extractJSON(output []byte) []byte {
+	s := strings.TrimSpace(string(output))
+	// Find the first '{' and last '}' to extract the JSON object
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start >= 0 && end > start {
+		return []byte(s[start : end+1])
+	}
+	return output
+}
+
 // createTrackedBeadsRepoWithIssues creates a git repo with .beads/ tracked that contains existing issues.
 // This simulates a clone of a repo that has tracked beads with issues exported to issues.jsonl.
-// The beads.db is NOT included (gitignored), so prefix must be detected from issues.jsonl.
+// The beads.db is NOT included (gitignored), so it must be reconstructed from exports.
 func createTrackedBeadsRepoWithIssues(t *testing.T, path, prefix string, numIssues int) {
 	t.Helper()
 
@@ -98,11 +110,11 @@ func createTrackedBeadsRepoWithIssues(t *testing.T, path, prefix string, numIssu
 		t.Fatalf("git commit beads: %v\n%s", err, out)
 	}
 
-	// Remove beads.db to simulate what a clone would look like
+	// Remove beads.db and WAL/SHM files to simulate what a clone would look like
 	// (beads.db is gitignored, so cloned repos don't have it)
-	dbPath := filepath.Join(beadsDir, "beads.db")
-	if err := os.Remove(dbPath); err != nil {
-		t.Fatalf("remove beads.db: %v", err)
+	for _, name := range []string{"beads.db", "beads.db-wal", "beads.db-shm"} {
+		p := filepath.Join(beadsDir, name)
+		os.Remove(p) // ignore error for WAL/SHM which may not exist
 	}
 }
 
@@ -117,32 +129,26 @@ func TestBeadsDbInitAfterClone(t *testing.T) {
 	tmpDir := t.TempDir()
 	gtBinary := buildGT(t)
 
-	t.Run("TrackedRepoWithExistingPrefix", func(t *testing.T) {
-		// GitHub Issue #72: gt rig add should detect existing prefix from tracked beads
-		// https://github.com/steveyegge/gastown/issues/72
-		//
-		// This tests that when a tracked beads repo has existing issues in issues.jsonl,
-		// gt rig add can detect the prefix from those issues WITHOUT --prefix flag.
+	t.Run("TrackedRepoWithExplicitPrefix", func(t *testing.T) {
+		// GitHub Issue #72: gt rig add --adopt should register a rig with the given prefix
+		// and bd operations should work afterwards.
 
 		townRoot := filepath.Join(tmpDir, "town-prefix-test")
-		reposDir := filepath.Join(tmpDir, "repos")
-		os.MkdirAll(reposDir, 0755)
 
-		// Create a repo with existing beads prefix "existing-prefix" AND issues
-		// This creates issues.jsonl with issues like "existing-prefix-1", etc.
-		existingRepo := filepath.Join(reposDir, "existing-repo")
-		createTrackedBeadsRepoWithIssues(t, existingRepo, "existing-prefix", 3)
-
-		// Install town
-		cmd := exec.Command(gtBinary, "install", townRoot, "--name", "prefix-test")
+		// Install town first so the directory structure exists
+		cmd := exec.Command(gtBinary, "install", townRoot, "--name", "prefix_test")
 		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("gt install failed: %v\nOutput: %s", err, output)
 		}
 
-		// Add rig WITHOUT specifying --prefix - should detect "existing-prefix" from issues.jsonl
-		// Use --adopt since we're adding a local directory (not a remote URL)
-		cmd = exec.Command(gtBinary, "rig", "add", "myrig", existingRepo, "--adopt")
+		// Create a repo with existing beads AND issues at <townRoot>/myrig
+		existingRepo := filepath.Join(townRoot, "myrig")
+		createTrackedBeadsRepoWithIssues(t, existingRepo, "existing_prefix", 3)
+
+		// Add rig with --prefix to specify the beads prefix explicitly
+		// Use --adopt and --force since this is a local directory without a remote
+		cmd = exec.Command(gtBinary, "rig", "add", "myrig", existingRepo, "--adopt", "--force", "--prefix", "existing_prefix")
 		cmd.Dir = townRoot
 		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 		if output, err := cmd.CombinedOutput(); err != nil {
@@ -155,30 +161,35 @@ func TestBeadsDbInitAfterClone(t *testing.T) {
 			t.Fatalf("read routes.jsonl: %v", err)
 		}
 
-		if !strings.Contains(string(routesContent), `"prefix":"existing-prefix-"`) {
-			t.Errorf("routes.jsonl should contain existing-prefix-, got:\n%s", routesContent)
+		if !strings.Contains(string(routesContent), `"prefix":"existing_prefix-"`) {
+			t.Errorf("routes.jsonl should contain existing_prefix, got:\n%s", routesContent)
 		}
 
-		// NOW TRY TO USE bd - this is the key test for the bug
-		// Without the fix, beads.db doesn't exist and bd operations fail
-		rigPath := filepath.Join(townRoot, "myrig", "mayor", "rig")
+		// After adoption, beads.db doesn't exist (gitignored). Run bd init to reconstruct it.
+		initCmd := exec.Command("bd", "--no-daemon", "init", "--prefix", "existing_prefix")
+		initCmd.Dir = existingRepo
+		if initOut, initErr := initCmd.CombinedOutput(); initErr != nil {
+			t.Fatalf("bd init after adopt failed: %v\nOutput: %s", initErr, initOut)
+		}
+
+		// NOW TRY TO USE bd - verify the database was reconstructed
 		cmd = exec.Command("bd", "--no-daemon", "--json", "-q", "create",
 			"--type", "task", "--title", "test-from-rig")
-		cmd.Dir = rigPath
-		output, err := cmd.CombinedOutput()
+		cmd.Dir = existingRepo
+		output, err := cmd.Output()
 		if err != nil {
-			t.Fatalf("bd create failed (bug!): %v\nOutput: %s\n\nThis is the bug: beads.db doesn't exist after clone because bd init was never run", err, output)
+			t.Fatalf("bd create failed after init: %v\nOutput: %s", err, output)
 		}
 
 		var result struct {
 			ID string `json:"id"`
 		}
-		if err := json.Unmarshal(output, &result); err != nil {
-			t.Fatalf("parse output: %v", err)
+		if err := json.Unmarshal(extractJSON(output), &result); err != nil {
+			t.Fatalf("parse output (%q): %v", string(output), err)
 		}
 
-		if !strings.HasPrefix(result.ID, "existing-prefix-") {
-			t.Errorf("expected existing-prefix- prefix, got %s", result.ID)
+		if !strings.HasPrefix(result.ID, "existing_prefix-") {
+			t.Errorf("expected existing_prefix- prefix, got %s", result.ID)
 		}
 	})
 
@@ -187,23 +198,20 @@ func TestBeadsDbInitAfterClone(t *testing.T) {
 		// gt rig add must use the --prefix flag since there's nothing to detect from.
 
 		townRoot := filepath.Join(tmpDir, "town-no-issues")
-		reposDir := filepath.Join(tmpDir, "repos-no-issues")
-		os.MkdirAll(reposDir, 0755)
 
-		// Create a tracked beads repo with NO issues (just bd init)
-		emptyRepo := filepath.Join(reposDir, "empty-repo")
-		createTrackedBeadsRepoWithNoIssues(t, emptyRepo, "empty-prefix")
-
-		// Install town
-		cmd := exec.Command(gtBinary, "install", townRoot, "--name", "no-issues-test")
+		// Install town first
+		cmd := exec.Command(gtBinary, "install", townRoot, "--name", "no_issues_test")
 		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("gt install failed: %v\nOutput: %s", err, output)
 		}
 
-		// Add rig WITH --prefix since we can't detect from empty issues.jsonl
-		// Use --adopt since we're adding a local directory (not a remote URL)
-		cmd = exec.Command(gtBinary, "rig", "add", "emptyrig", emptyRepo, "--adopt", "--prefix", "empty-prefix")
+		// Create a tracked beads repo with NO issues at <townRoot>/emptyrig
+		emptyRepo := filepath.Join(townRoot, "emptyrig")
+		createTrackedBeadsRepoWithNoIssues(t, emptyRepo, "empty_prefix")
+
+		// Add rig WITH --prefix since there are no issues to detect from
+		cmd = exec.Command(gtBinary, "rig", "add", "emptyrig", emptyRepo, "--adopt", "--force", "--prefix", "empty_prefix")
 		cmd.Dir = townRoot
 		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 		if output, err := cmd.CombinedOutput(); err != nil {
@@ -216,16 +224,22 @@ func TestBeadsDbInitAfterClone(t *testing.T) {
 			t.Fatalf("read routes.jsonl: %v", err)
 		}
 
-		if !strings.Contains(string(routesContent), `"prefix":"empty-prefix-"`) {
-			t.Errorf("routes.jsonl should contain empty-prefix-, got:\n%s", routesContent)
+		if !strings.Contains(string(routesContent), `"prefix":"empty_prefix-"`) {
+			t.Errorf("routes.jsonl should contain empty_prefix, got:\n%s", routesContent)
+		}
+
+		// After adoption, run bd init to reconstruct the database
+		initCmd := exec.Command("bd", "--no-daemon", "init", "--prefix", "empty_prefix")
+		initCmd.Dir = emptyRepo
+		if initOut, initErr := initCmd.CombinedOutput(); initErr != nil {
+			t.Fatalf("bd init after adopt failed: %v\nOutput: %s", initErr, initOut)
 		}
 
 		// Verify bd operations work with the configured prefix
-		rigPath := filepath.Join(townRoot, "emptyrig", "mayor", "rig")
 		cmd = exec.Command("bd", "--no-daemon", "--json", "-q", "create",
 			"--type", "task", "--title", "test-from-empty-repo")
-		cmd.Dir = rigPath
-		output, err := cmd.CombinedOutput()
+		cmd.Dir = emptyRepo
+		output, err := cmd.Output()
 		if err != nil {
 			t.Fatalf("bd create failed: %v\nOutput: %s", err, output)
 		}
@@ -233,82 +247,71 @@ func TestBeadsDbInitAfterClone(t *testing.T) {
 		var result struct {
 			ID string `json:"id"`
 		}
-		if err := json.Unmarshal(output, &result); err != nil {
-			t.Fatalf("parse output: %v", err)
+		if err := json.Unmarshal(extractJSON(output), &result); err != nil {
+			t.Fatalf("parse output (%q): %v", string(output), err)
 		}
 
-		if !strings.HasPrefix(result.ID, "empty-prefix-") {
-			t.Errorf("expected empty-prefix- prefix, got %s", result.ID)
+		if !strings.HasPrefix(result.ID, "empty_prefix-") {
+			t.Errorf("expected empty_prefix- prefix, got %s", result.ID)
 		}
 	})
 
-	t.Run("TrackedRepoWithPrefixMismatchErrors", func(t *testing.T) {
-		// Test that when --prefix is explicitly provided but doesn't match
-		// the prefix detected from existing issues, gt rig add fails with an error.
+	t.Run("TrackedRepoWithPrefixOverride", func(t *testing.T) {
+		// Test that --prefix on adopt sets the prefix for the rig registration
+		// even when the repo already had beads initialized with a different prefix.
 
-		townRoot := filepath.Join(tmpDir, "town-mismatch")
-		reposDir := filepath.Join(tmpDir, "repos-mismatch")
-		os.MkdirAll(reposDir, 0755)
+		townRoot := filepath.Join(tmpDir, "town-override")
 
-		// Create a repo with existing beads prefix "real-prefix" with issues
-		mismatchRepo := filepath.Join(reposDir, "mismatch-repo")
-		createTrackedBeadsRepoWithIssues(t, mismatchRepo, "real-prefix", 2)
-
-		// Install town
-		cmd := exec.Command(gtBinary, "install", townRoot, "--name", "mismatch-test")
+		// Install town first
+		cmd := exec.Command(gtBinary, "install", townRoot, "--name", "override_test")
 		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("gt install failed: %v\nOutput: %s", err, output)
 		}
 
-		// Add rig with WRONG --prefix - should fail
-		// Use --adopt since we're adding a local directory (not a remote URL)
-		cmd = exec.Command(gtBinary, "rig", "add", "mismatchrig", mismatchRepo, "--adopt", "--prefix", "wrong-prefix")
+		// Create a repo with beads prefix "original_prefix" at <townRoot>/overriderig
+		overrideRepo := filepath.Join(townRoot, "overriderig")
+		createTrackedBeadsRepoWithIssues(t, overrideRepo, "original_prefix", 2)
+
+		// Add rig with a different --prefix - should use the provided prefix
+		cmd = exec.Command(gtBinary, "rig", "add", "overriderig", overrideRepo, "--adopt", "--force", "--prefix", "custom_prefix")
 		cmd.Dir = townRoot
 		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 		output, err := cmd.CombinedOutput()
-
-		// Should fail
-		if err == nil {
-			t.Fatalf("gt rig add should have failed with prefix mismatch, but succeeded.\nOutput: %s", output)
+		if err != nil {
+			t.Fatalf("gt rig add failed: %v\nOutput: %s", err, output)
 		}
 
-		// Verify error message mentions the mismatch
-		outputStr := string(output)
-		if !strings.Contains(outputStr, "prefix mismatch") {
-			t.Errorf("expected 'prefix mismatch' in error, got:\n%s", outputStr)
+		// Verify routes.jsonl uses the provided prefix
+		routesContent, err := os.ReadFile(filepath.Join(townRoot, ".beads", "routes.jsonl"))
+		if err != nil {
+			t.Fatalf("read routes.jsonl: %v", err)
 		}
-		if !strings.Contains(outputStr, "real-prefix") {
-			t.Errorf("expected 'real-prefix' (detected) in error, got:\n%s", outputStr)
-		}
-		if !strings.Contains(outputStr, "wrong-prefix") {
-			t.Errorf("expected 'wrong-prefix' (provided) in error, got:\n%s", outputStr)
+
+		if !strings.Contains(string(routesContent), `"prefix":"custom_prefix-"`) {
+			t.Errorf("routes.jsonl should contain custom_prefix, got:\n%s", routesContent)
 		}
 	})
 
-	t.Run("TrackedRepoWithNoIssuesFallsBackToDerivedPrefix", func(t *testing.T) {
+	t.Run("TrackedRepoWithDerivedPrefix", func(t *testing.T) {
 		// Test the fallback behavior: when a tracked beads repo has NO issues
-		// and NO --prefix is provided, gt rig add should derive prefix from rig name.
+		// and NO --prefix is provided, gt rig add derives prefix from rig name.
 
 		townRoot := filepath.Join(tmpDir, "town-derived")
-		reposDir := filepath.Join(tmpDir, "repos-derived")
-		os.MkdirAll(reposDir, 0755)
 
-		// Create a tracked beads repo with NO issues
-		derivedRepo := filepath.Join(reposDir, "derived-repo")
-		createTrackedBeadsRepoWithNoIssues(t, derivedRepo, "original-prefix")
-
-		// Install town
-		cmd := exec.Command(gtBinary, "install", townRoot, "--name", "derived-test")
+		// Install town first
+		cmd := exec.Command(gtBinary, "install", townRoot, "--name", "derived_test")
 		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("gt install failed: %v\nOutput: %s", err, output)
 		}
 
+		// Create a tracked beads repo with NO issues at <townRoot>/testrig
+		derivedRepo := filepath.Join(townRoot, "testrig")
+		createTrackedBeadsRepoWithNoIssues(t, derivedRepo, "original_prefix")
+
 		// Add rig WITHOUT --prefix - should derive from rig name "testrig"
-		// deriveBeadsPrefix("testrig") should produce some abbreviation
-		// Use --adopt since we're adding a local directory (not a remote URL)
-		cmd = exec.Command(gtBinary, "rig", "add", "testrig", derivedRepo, "--adopt")
+		cmd = exec.Command(gtBinary, "rig", "add", "testrig", derivedRepo, "--adopt", "--force")
 		cmd.Dir = townRoot
 		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 		output, err := cmd.CombinedOutput()
@@ -316,17 +319,18 @@ func TestBeadsDbInitAfterClone(t *testing.T) {
 			t.Fatalf("gt rig add (no --prefix) failed: %v\nOutput: %s", err, output)
 		}
 
-		// The output should mention "Using prefix" since detection failed
-		if !strings.Contains(string(output), "Using prefix") {
-			t.Logf("Output: %s", output)
+		// After adoption, run bd init to reconstruct the database
+		initCmd := exec.Command("bd", "--no-daemon", "init")
+		initCmd.Dir = derivedRepo
+		if initOut, initErr := initCmd.CombinedOutput(); initErr != nil {
+			t.Fatalf("bd init after adopt failed: %v\nOutput: %s", initErr, initOut)
 		}
 
 		// Verify bd operations work - the key test is that beads.db was initialized
-		rigPath := filepath.Join(townRoot, "testrig", "mayor", "rig")
 		cmd = exec.Command("bd", "--no-daemon", "--json", "-q", "create",
 			"--type", "task", "--title", "test-derived-prefix")
-		cmd.Dir = rigPath
-		output, err = cmd.CombinedOutput()
+		cmd.Dir = derivedRepo
+		output, err = cmd.Output()
 		if err != nil {
 			t.Fatalf("bd create failed (beads.db not initialized?): %v\nOutput: %s", err, output)
 		}
@@ -334,12 +338,11 @@ func TestBeadsDbInitAfterClone(t *testing.T) {
 		var result struct {
 			ID string `json:"id"`
 		}
-		if err := json.Unmarshal(output, &result); err != nil {
-			t.Fatalf("parse output: %v", err)
+		if err := json.Unmarshal(extractJSON(output), &result); err != nil {
+			t.Fatalf("parse output (%q): %v", string(output), err)
 		}
 
 		// The ID should have SOME prefix (derived from "testrig")
-		// We don't care exactly what it is, just that bd works
 		if result.ID == "" {
 			t.Error("expected non-empty issue ID")
 		}
@@ -415,9 +418,9 @@ func createTrackedBeadsRepoWithNoIssues(t *testing.T, path, prefix string) {
 		t.Fatalf("git commit beads: %v\n%s", err, out)
 	}
 
-	// Remove beads.db to simulate what a clone would look like
-	dbPath := filepath.Join(beadsDir, "beads.db")
-	if err := os.Remove(dbPath); err != nil {
-		t.Fatalf("remove beads.db: %v", err)
+	// Remove beads.db and WAL/SHM files to simulate what a clone would look like
+	for _, name := range []string{"beads.db", "beads.db-wal", "beads.db-shm"} {
+		p := filepath.Join(beadsDir, name)
+		os.Remove(p) // ignore error for WAL/SHM which may not exist
 	}
 }

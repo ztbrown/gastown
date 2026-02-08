@@ -281,3 +281,6 @@ required = true
 [vars.issue]
 description = "The tracking issue for this review task"
 required = true
+
+[vars.rig]
+required = true
