@@ -38,16 +38,17 @@ import (
 // This is recovery-focused: normal wake is handled by feed subscription (bd activity --follow).
 // The daemon is the safety net for dead sessions, GUPP violations, and orphaned work.
 type Daemon struct {
-	config       *Config
-	patrolConfig *DaemonPatrolConfig
-	tmux         *tmux.Tmux
-	logger       *log.Logger
-	ctx          context.Context
-	cancel       context.CancelFunc
-	curator       *feed.Curator
-	convoyWatcher *ConvoyWatcher
-	doltServer    *DoltServerManager
-	krcPruner     *KRCPruner
+	config         *Config
+	patrolConfig   *DaemonPatrolConfig
+	tmux           *tmux.Tmux
+	logger         *log.Logger
+	ctx            context.Context
+	cancel         context.CancelFunc
+	curator        *feed.Curator
+	convoyWatcher  *ConvoyWatcher
+	discordWatcher *DiscordWatcher
+	doltServer     *DoltServerManager
+	krcPruner      *KRCPruner
 
 	// Mass death detection: track recent session deaths
 	deathsMu     sync.Mutex
@@ -189,6 +190,16 @@ func (d *Daemon) Run() error {
 			d.logger.Printf("Warning: failed to start KRC pruner: %v", err)
 		} else {
 			d.logger.Println("KRC pruner started")
+		}
+	}
+
+	// Start Discord watcher if configured
+	if d.patrolConfig != nil && d.patrolConfig.Patrols != nil && d.patrolConfig.Patrols.Discord != nil && d.patrolConfig.Patrols.Discord.Enabled {
+		d.discordWatcher = NewDiscordWatcher(d.config.TownRoot, d.logger.Printf)
+		if err := d.discordWatcher.Start(); err != nil {
+			d.logger.Printf("Warning: failed to start Discord watcher: %v", err)
+		} else {
+			d.logger.Println("Discord watcher started")
 		}
 	}
 
@@ -730,6 +741,12 @@ func (d *Daemon) shutdown(state *State) error { //nolint:unparam // error return
 	if d.krcPruner != nil {
 		d.krcPruner.Stop()
 		d.logger.Println("KRC pruner stopped")
+	}
+
+	// Stop Discord watcher
+	if d.discordWatcher != nil {
+		d.discordWatcher.Stop()
+		d.logger.Println("Discord watcher stopped")
 	}
 
 	// Stop Dolt server if we're managing it

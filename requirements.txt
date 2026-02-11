@@ -1,0 +1,5 @@
+# Gas Town Hal Dependencies
+# Python dependencies for daemon components
+
+# Discord watcher
+discord.py>=2.0.0

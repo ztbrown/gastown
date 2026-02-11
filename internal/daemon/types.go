@@ -108,12 +108,18 @@ type PatrolConfig struct {
 	Agent string `json:"agent,omitempty"`
 }
 
+// DiscordWatcherConfig holds configuration for the Discord watcher.
+type DiscordWatcherConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
 // PatrolsConfig holds configuration for all patrols.
 type PatrolsConfig struct {
-	Refinery   *PatrolConfig     `json:"refinery,omitempty"`
-	Witness    *PatrolConfig     `json:"witness,omitempty"`
-	Deacon     *PatrolConfig     `json:"deacon,omitempty"`
-	DoltServer *DoltServerConfig `json:"dolt_server,omitempty"`
+	Refinery *PatrolConfig          `json:"refinery,omitempty"`
+	Witness  *PatrolConfig          `json:"witness,omitempty"`
+	Deacon   *PatrolConfig          `json:"deacon,omitempty"`
+	Discord  *DiscordWatcherConfig  `json:"discord,omitempty"`
+	DoltServer *DoltServerConfig    `json:"dolt_server,omitempty"`
 }
 
 // DaemonPatrolConfig is the structure of mayor/daemon.json.
