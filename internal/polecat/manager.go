@@ -650,7 +650,10 @@ func (m *Manager) AddWithOptions(name string, opts AddOptions) (*Polecat, error)
 	}
 
 	// Validate that startPoint ref exists before attempting worktree creation
-	if exists, err := repoGit.RefExists(startPoint); err == nil && !exists {
+	if exists, err := repoGit.RefExists(startPoint); err != nil {
+		cleanupOnError()
+		return nil, fmt.Errorf("checking ref %s: %w", startPoint, err)
+	} else if !exists {
 		cleanupOnError()
 		return nil, fmt.Errorf("configured default_branch not found as %s in bare repo\n\n"+
 			"Possible causes:\n"+
@@ -1096,7 +1099,9 @@ func (m *Manager) RepairWorktreeWithOptions(name string, force bool, opts AddOpt
 	}
 
 	// Validate that startPoint ref exists before attempting worktree creation
-	if exists, err := repoGit.RefExists(startPoint); err == nil && !exists {
+	if exists, err := repoGit.RefExists(startPoint); err != nil {
+		return nil, fmt.Errorf("checking ref %s: %w", startPoint, err)
+	} else if !exists {
 		return nil, fmt.Errorf("configured default_branch not found as %s in bare repo\n\n"+
 			"Possible causes:\n"+
 			"  - Branch doesn't exist on the remote (create it there first)\n"+

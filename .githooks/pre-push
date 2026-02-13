@@ -7,9 +7,19 @@
 # branch that introduce integration branch content are blocked unless
 # GT_INTEGRATION_LAND=1 is set (only gt mq integration land sets this).
 
-# Detect the rig's default branch dynamically
+# Detect the rig's default branch dynamically.
+# Fallback chain matches Go implementation (git.RemoteDefaultBranch):
+# 1. origin/HEAD symref
+# 2. origin/master (if it exists)
+# 3. origin/main (final fallback)
 default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's#refs/remotes/origin/##')
-: "${default_branch:=main}"
+if [[ -z "$default_branch" ]]; then
+  if git rev-parse --verify origin/master &>/dev/null; then
+    default_branch=master
+  else
+    default_branch=main
+  fi
+fi
 
 # Allowed patterns:
 #   <default_branch>, beads-sync  - Direct work branches
@@ -59,8 +69,18 @@ while read local_ref local_sha remote_ref remote_sha; do
        [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
       continue
     fi
-    # Check if any integration branch tip is newly reachable from this push
-    for ref in $(git for-each-ref --format='%(objectname)' refs/remotes/origin/integration/); do
+    # Check if any integration branch tip is newly reachable from this push.
+    # Use ls-remote instead of for-each-ref to avoid false positives from stale
+    # local tracking refs that may linger after branch deletion.
+    # Fail closed: if ls-remote fails (network error), block the push rather than
+    # silently allowing unverified integration branch content through.
+    integration_refs=$(git ls-remote --quiet origin "refs/heads/integration/*" 2>&1) || {
+      echo "WARNING: Cannot verify integration branches (remote unreachable)."
+      echo "Push to $default_branch blocked. Retry when network is available,"
+      echo "or set GT_INTEGRATION_LAND=1 if this is an intentional land operation."
+      exit 1
+    }
+    for ref in $(echo "$integration_refs" | awk '{print $1}'); do
       if git merge-base --is-ancestor "$ref" "$local_sha" && \
          ! git merge-base --is-ancestor "$ref" "$remote_sha"; then
         echo "BLOCKED: Push to $default_branch introduces integration branch content."

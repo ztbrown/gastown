@@ -730,7 +730,22 @@ func (g *Git) BranchExists(name string) (bool, error) {
 }
 
 // RefExists checks if a ref exists (works for any ref including origin/<branch>).
+// Uses show-ref for fully-qualified refs, falls back to rev-parse for short refs.
 func (g *Git) RefExists(ref string) (bool, error) {
+	// Fully-qualified refs (refs/...) use show-ref which has a stable exit code contract:
+	// exit 0 = exists, exit 1 = missing, exit >1 = error.
+	if strings.HasPrefix(ref, "refs/") {
+		_, err := g.run("show-ref", "--verify", "--quiet", ref)
+		if err != nil {
+			if strings.Contains(err.Error(), "exit status 1") {
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	}
+
+	// Short refs (e.g., origin/main) need rev-parse --verify.
 	_, err := g.run("rev-parse", "--verify", ref)
 	if err != nil {
 		// Only treat "ref missing" as false — propagate other failures

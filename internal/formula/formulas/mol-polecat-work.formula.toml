@@ -523,11 +523,11 @@ default = "main"
 
 [vars.setup_command]
 description = "Setup/install command (e.g., pnpm install). Empty = skip."
-default = "none"
+default = ""
 
 [vars.typecheck_command]
 description = "Type check command (e.g., tsc --noEmit). Empty = skip."
-default = "none"
+default = ""
 
 [vars.test_command]
 description = "Command to run tests (auto-detected from rig settings)"
@@ -535,8 +535,8 @@ default = "go test ./..."
 
 [vars.lint_command]
 description = "Command to run linting. Empty = skip."
-default = "none"
+default = ""
 
 [vars.build_command]
 description = "Command to run build. Empty = skip."
-default = "none"
+default = ""

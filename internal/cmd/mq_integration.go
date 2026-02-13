@@ -100,8 +100,11 @@ func getRigGit(rigPath string) (*git.Git, error) {
 // The caller MUST call the returned cleanup function when done (typically via defer).
 // The worktree is checked out to startBranch (e.g., "main").
 //
-// A file lock prevents concurrent land operations (e.g., refinery auto-land + manual)
-// from racing on the fixed .land-worktree path.
+// A global file lock serializes ALL land operations within a rig, even those targeting
+// different branches (e.g., landing epic-A to main and epic-C to staging). This is
+// intentional: the fixed .land-worktree path is reused across operations, and single-rig
+// simplicity is preferred over parallel landing. If per-branch parallelism is needed in
+// the future, both the lock and worktree paths should be made per-target-branch.
 func createLandWorktree(rigPath, startBranch string) (*git.Git, func(), error) {
 	landPath := filepath.Join(rigPath, ".land-worktree")
 	noop := func() {}
@@ -240,7 +243,11 @@ func resolveEpicBranch(epic *beads.Issue, rigPath string, checker beads.BranchCh
 		return legacyBranch
 	}
 
-	// 6. Nothing found — return primary name (callers handle "not found")
+	// 6. Nothing found — return primary name (callers handle "not found").
+	// Note: if neither primary nor legacy branch exists, the caller will get a "does not exist"
+	// error. This can happen when the integration branch template changed since the epic was
+	// created (e.g., {epic} → {title}). Check the epic's metadata or the rig's
+	// integration_branch_template setting if the branch name looks wrong.
 	return primaryBranch
 }
 
@@ -343,6 +350,15 @@ func runMqIntegrationCreate(cmd *cobra.Command, args []string) error {
 	// Validate the branch name
 	if err := validateBranchName(branchName); err != nil {
 		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
+	// Warn if the branch name doesn't start with "integration/" — the pre-push
+	// hook guardrail only protects branches under that prefix.
+	if !strings.HasPrefix(branchName, "integration/") {
+		fmt.Printf("  %s Branch '%s' is outside the integration/ namespace.\n",
+			style.Bold.Render("⚠"),
+			branchName)
+		fmt.Printf("    The pre-push hook guardrail won't cover this branch.\n")
 	}
 
 	// Initialize git for the rig
@@ -663,12 +679,28 @@ func runMqIntegrationLand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// cleanupIntegrationBranch deletes the integration branch (local + remote) and closes the epic.
+// cleanupIntegrationBranch closes the epic and deletes the integration branch (local + remote).
 // Shared by the normal merge path and the idempotency early-return path.
 // If epicAlreadyClosed is true, skips the bd.Close call (another process already closed it).
 // Returns a list of warnings for any cleanup steps that failed (non-fatal).
+//
+// Epic close happens BEFORE branch deletion so that a crash between the two
+// steps leaves the operation in a retriable state (branch still exists for
+// idempotent re-run, but the epic is already marked done).
 func cleanupIntegrationBranch(g *git.Git, bd *beads.Beads, epicID, branchName, targetBranch string, epicAlreadyClosed bool) []string {
 	var warnings []string
+
+	// Close epic first — ensures retriable state if branch deletion fails
+	fmt.Printf("Updating epic status...\n")
+	if epicAlreadyClosed {
+		fmt.Printf("  %s Epic was already closed (skipping)\n", style.Dim.Render("—"))
+	} else if err := bd.Close(epicID); err != nil {
+		// Epic close failure is fatal — branch deletion without a closed epic
+		// leaves a non-retriable state (no branch for idempotent re-run).
+		return append(warnings, fmt.Sprintf("could not close epic (aborting cleanup): %v", err))
+	} else {
+		fmt.Printf("  %s Epic closed\n", style.Bold.Render("✓"))
+	}
 
 	// Delete integration branch (use bare repo git — ref-only operations)
 	fmt.Printf("Deleting integration branch...\n")
@@ -689,18 +721,6 @@ func cleanupIntegrationBranch(g *git.Git, bd *beads.Beads, epicID, branchName, t
 		fmt.Printf("  %s Deleted locally\n", style.Bold.Render("✓"))
 	}
 
-	// Update epic status
-	fmt.Printf("Updating epic status...\n")
-	if epicAlreadyClosed {
-		fmt.Printf("  %s Epic was already closed (skipping)\n", style.Dim.Render("—"))
-	} else if err := bd.Close(epicID); err != nil {
-		warning := fmt.Sprintf("could not close epic: %v", err)
-		warnings = append(warnings, warning)
-		fmt.Printf("  %s\n", style.Dim.Render(fmt.Sprintf("(%s)", warning)))
-	} else {
-		fmt.Printf("  %s Epic closed\n", style.Bold.Render("✓"))
-	}
-
 	// Report result
 	if len(warnings) > 0 {
 		fmt.Printf("\n%s Landed integration branch (with %d cleanup warning(s))\n", style.Bold.Render("⚠"), len(warnings))
@@ -713,19 +733,31 @@ func cleanupIntegrationBranch(g *git.Git, bd *beads.Beads, epicID, branchName, t
 	return warnings
 }
 
-// findOpenMRsForIntegration finds all open merge requests targeting an integration branch.
+// findOpenMRsForIntegration finds all non-closed merge requests targeting an integration branch.
+// Uses Status "all" instead of "open" to catch in_progress MRs (refinery race),
+// then post-filters to exclude closed MRs.
 func findOpenMRsForIntegration(bd *beads.Beads, targetBranch string) ([]*beads.Issue, error) {
-	// List all open merge requests (MRs have Type: "task" with label "gt:merge-request")
+	// List all merge requests at any priority (MRs have Type: "task" with label "gt:merge-request").
+	// Use Status "all" to catch in_progress MRs that the refinery may have picked up.
 	opts := beads.ListOptions{
-		Label:  "gt:merge-request",
-		Status: "open",
+		Label:    "gt:merge-request",
+		Status:   "all",
+		Priority: -1,
 	}
 	allMRs, err := bd.List(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	return filterMRsByTarget(allMRs, targetBranch), nil
+	// Filter to MRs targeting this branch, excluding closed (merged) MRs
+	targeted := filterMRsByTarget(allMRs, targetBranch)
+	var open []*beads.Issue
+	for _, mr := range targeted {
+		if mr.Status != "closed" {
+			open = append(open, mr)
+		}
+	}
+	return open, nil
 }
 
 // filterMRsByTarget filters merge requests to those targeting a specific branch.
@@ -754,13 +786,15 @@ func getTestCommand(rigPath string) string {
 }
 
 // runTestCommand executes a test command in the given directory.
+// Trust boundary: TestCommand comes from rig's config.json (operator-controlled
+// infrastructure config), not from PR branches or user input. Shell execution
+// is intentional for flexibility (pipes, env vars, quoted args, etc).
 func runTestCommand(workDir, testCmd string) error {
-	parts := strings.Fields(testCmd)
-	if len(parts) == 0 {
+	if testCmd == "" {
 		return nil
 	}
 
-	cmd := exec.Command(parts[0], parts[1:]...)
+	cmd := exec.Command("sh", "-c", testCmd) //nolint:gosec // G204: TestCommand is from trusted rig config
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -847,8 +881,9 @@ func runMqIntegrationStatus(cmd *cobra.Command, args []string) error {
 
 	// Get all merge-request issues (MRs have Type: "task" with label "gt:merge-request")
 	allMRs, err := bd.List(beads.ListOptions{
-		Label:  "gt:merge-request",
-		Status: "all",
+		Label:    "gt:merge-request",
+		Status:   "all",
+		Priority: -1,
 	})
 	if err != nil {
 		return fmt.Errorf("querying merge requests: %w", err)
@@ -858,7 +893,10 @@ func runMqIntegrationStatus(cmd *cobra.Command, args []string) error {
 	var mergedMRs, pendingMRs []*beads.Issue
 	for _, mr := range allMRs {
 		fields := beads.ParseMRFields(mr)
-		if fields == nil || fields.Target != targetBranch {
+		if fields == nil {
+			continue
+		}
+		if fields.Target != targetBranch {
 			continue
 		}
 

@@ -503,15 +503,15 @@ gt mail send --human -s "SYNC_FAILED $(hostname)" -m "<report with failure detai
 [vars]
 [vars.setup_command]
 description = "Setup/install command (e.g., pnpm install). Empty = skip."
-default = "none"
+default = ""
 
 [vars.typecheck_command]
 description = "Type check command (e.g., tsc --noEmit). Empty = skip."
-default = "none"
+default = ""
 
 [vars.lint_command]
 description = "Lint command (e.g., eslint .). Empty = skip."
-default = "none"
+default = ""
 
 [vars.test_command]
 description = "Command to run tests (auto-detected from rig settings)"
@@ -519,4 +519,4 @@ default = "go test ./..."
 
 [vars.build_command]
 description = "Command to run build. Empty = skip."
-default = "none"
+default = ""

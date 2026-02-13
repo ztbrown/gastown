@@ -90,15 +90,15 @@ default = "true"
 
 [vars.setup_command]
 description = "Setup/install command (e.g., pnpm install). Empty = skip."
-default = "none"
+default = ""
 
 [vars.typecheck_command]
 description = "Type check command (e.g., tsc --noEmit). Empty = skip."
-default = "none"
+default = ""
 
 [vars.lint_command]
 description = "Lint command (e.g., eslint .). Empty = skip."
-default = "none"
+default = ""
 
 [vars.test_command]
 description = "Test command to run (if run_tests is true)"
@@ -106,7 +106,7 @@ default = "go test ./..."
 
 [vars.build_command]
 description = "Build command (e.g., go build ./...). Empty = skip."
-default = "none"
+default = ""
 
 [vars.target_branch]
 description = "Default target branch for merges"

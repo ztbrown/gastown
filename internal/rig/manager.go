@@ -370,7 +370,9 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	// Validate user-provided branch exists on remote (auto-detected branches are inherently valid)
 	if opts.DefaultBranch != "" {
 		ref := fmt.Sprintf("origin/%s", defaultBranch)
-		if exists, err := bareGit.RefExists(ref); err == nil && !exists {
+		if exists, err := bareGit.RefExists(ref); err != nil {
+			return nil, fmt.Errorf("checking ref %s: %w", ref, err)
+		} else if !exists {
 			return nil, fmt.Errorf("branch %q does not exist on remote (ref %s not found in bare repo)", defaultBranch, ref)
 		}
 	}
