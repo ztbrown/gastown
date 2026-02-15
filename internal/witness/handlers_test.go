@@ -13,11 +13,12 @@ import (
 func TestZombieResult_Types(t *testing.T) {
 	// Verify the ZombieResult type has all expected fields
 	z := ZombieResult{
-		PolecatName: "nux",
-		AgentState:  "working",
-		HookBead:    "gt-abc123",
-		Action:      "auto-nuked",
-		Error:       nil,
+		PolecatName:   "nux",
+		AgentState:    "working",
+		HookBead:      "gt-abc123",
+		Action:        "auto-nuked",
+		BeadRecovered: true,
+		Error:         nil,
 	}
 
 	if z.PolecatName != "nux" {
@@ -31,6 +32,9 @@ func TestZombieResult_Types(t *testing.T) {
 	}
 	if z.Action != "auto-nuked" {
 		t.Errorf("Action = %q, want %q", z.Action, "auto-nuked")
+	}
+	if !z.BeadRecovered {
+		t.Error("BeadRecovered = false, want true")
 	}
 }
 
@@ -493,5 +497,33 @@ func TestDetectZombie_BeadClosedVsDoneIntent(t *testing.T) {
 	}
 	if closedBeadCheck {
 		t.Error("closed-bead check should not run when done-intent exists")
+	}
+}
+
+func TestResetAbandonedBead_EmptyHookBead(t *testing.T) {
+	// resetAbandonedBead should return false for empty hookBead
+	result := resetAbandonedBead("/tmp", "testrig", "", "nux", nil)
+	if result {
+		t.Error("resetAbandonedBead should return false for empty hookBead")
+	}
+}
+
+func TestResetAbandonedBead_NoRouter(t *testing.T) {
+	// resetAbandonedBead with nil router should not panic even if bead exists.
+	// It will return false because bd won't find the bead, but shouldn't crash.
+	result := resetAbandonedBead("/tmp/nonexistent", "testrig", "gt-fake123", "nux", nil)
+	if result {
+		t.Error("resetAbandonedBead should return false when bd commands fail")
+	}
+}
+
+func TestBeadRecoveredField_DefaultFalse(t *testing.T) {
+	// BeadRecovered should default to false (zero value)
+	z := ZombieResult{
+		PolecatName: "nux",
+		AgentState:  "working",
+	}
+	if z.BeadRecovered {
+		t.Error("BeadRecovered should default to false")
 	}
 }
