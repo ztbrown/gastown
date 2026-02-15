@@ -93,7 +93,7 @@ func showMoleculeExecutionPrompt(workDir, moleculeID string) {
 		fmt.Println()
 		fmt.Println("When complete:")
 		fmt.Printf("  1. Close the step: bd close %s\n", step.ID)
-		fmt.Println("  2. Check for next step: bd ready")
+		fmt.Printf("  2. Check for next step: bd mol current %s\n", moleculeID)
 		fmt.Println("  3. Continue until molecule complete")
 	} else {
 		// No next step - molecule may be complete

@@ -387,8 +387,20 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 		}
 
 		// If no commits ahead, work was likely pushed directly to main (or already merged)
-		// This is valid - skip MR creation but still complete successfully
+		// For polecats, zero commits usually means the polecat hallucinated completion
+		// (gastown#1484). Require --cleanup-status=clean as explicit acknowledgment
+		// that no code changes were expected (e.g., review or testing tasks).
 		if aheadCount == 0 {
+			if os.Getenv("GT_POLECAT") != "" && doneCleanupStatus != "clean" {
+				return fmt.Errorf("cannot complete: no commits on branch\n" +
+					"If this task required no code changes (review, testing, triage),\n" +
+					"re-run with: gt done --cleanup-status clean\n" +
+					"Otherwise: --status ESCALATED (blocker) or --status DEFERRED (pause)")
+			}
+
+			// Non-polecat (crew/mayor) or polecat with --cleanup-status=clean:
+			// zero commits is valid — work may have been pushed directly to main,
+			// already merged, or task required no code changes.
 			fmt.Printf("%s Branch has no commits ahead of %s\n", style.Bold.Render("→"), originDefault)
 			fmt.Printf("  Work was likely pushed directly to main or already merged.\n")
 			fmt.Printf("  Skipping MR creation - completing without merge request.\n\n")
