@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -246,7 +247,7 @@ func installFakeBd(t *testing.T) string {
 
 	if runtime.GOOS == "windows" {
 		// Windows: create a .bat file since shell scripts don't work
-		script := fmt.Sprintf("@echo off\r\necho %%* >> %q\r\nif \"%%1\"==\"list\" (\r\n  echo []\r\n) else if \"%%1\"==\"update\" (\r\n  exit /b 0\r\n) else (\r\n  echo {}\r\n)\r\n", argsLog)
+		script := fmt.Sprintf("@echo off\r\necho %%* >> %q\r\nif \"%%1\"==\"list\" (\r\n  echo []\r\n) else if \"%%1\"==\"update\" (\r\n  exit /b 0\r\n) else if \"%%1\"==\"show\" (\r\n  echo [{\"labels\":[\"cleanup\",\"polecat:testpol\",\"state:pending\"]}]\r\n) else (\r\n  echo {}\r\n)\r\n", argsLog)
 		bdPath := filepath.Join(binDir, "bd.bat")
 		if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
 			t.Fatalf("write fake bd.bat: %v", err)
@@ -255,10 +256,10 @@ func installFakeBd(t *testing.T) string {
 		// Unix: create a shell script
 		script := fmt.Sprintf(`#!/bin/sh
 echo "$@" >> %q
-# Return empty JSON array for list commands, success for others
 case "$1" in
   list) echo "[]" ;;
   update) exit 0 ;;
+  show) echo '[{"labels":["cleanup","polecat:testpol","state:pending"]}]' ;;
   *) echo "{}" ;;
 esac
 `, argsLog)
@@ -284,20 +285,20 @@ func TestFindCleanupWisp_UsesCorrectBdListFlags(t *testing.T) {
 	got := string(args)
 
 	// Must use --label (singular), NOT --labels (plural)
-	if !contains(got, "--label") {
+	if !strings.Contains(got, "--label") {
 		t.Errorf("findCleanupWisp: expected --label flag, got: %s", got)
 	}
-	if contains(got, "--labels") {
+	if strings.Contains(got, "--labels") {
 		t.Errorf("findCleanupWisp: must not use --labels (plural), got: %s", got)
 	}
 
 	// Must NOT use --ephemeral (invalid for bd list)
-	if contains(got, "--ephemeral") {
+	if strings.Contains(got, "--ephemeral") {
 		t.Errorf("findCleanupWisp: must not use --ephemeral (invalid for bd list), got: %s", got)
 	}
 
 	// Must include the polecat label filter
-	if !contains(got, "polecat:nux") {
+	if !strings.Contains(got, "polecat:nux") {
 		t.Errorf("findCleanupWisp: expected polecat:nux label, got: %s", got)
 	}
 }
@@ -315,20 +316,20 @@ func TestFindAnyCleanupWisp_UsesCorrectBdListFlags(t *testing.T) {
 	got := string(args)
 
 	// Must use --label (singular), NOT --labels (plural)
-	if !contains(got, "--label") {
+	if !strings.Contains(got, "--label") {
 		t.Errorf("findAnyCleanupWisp: expected --label flag, got: %s", got)
 	}
-	if contains(got, "--labels") {
+	if strings.Contains(got, "--labels") {
 		t.Errorf("findAnyCleanupWisp: must not use --labels (plural), got: %s", got)
 	}
 
 	// Must NOT use --ephemeral (invalid for bd list)
-	if contains(got, "--ephemeral") {
+	if strings.Contains(got, "--ephemeral") {
 		t.Errorf("findAnyCleanupWisp: must not use --ephemeral (invalid for bd list), got: %s", got)
 	}
 
 	// Must include the polecat label filter
-	if !contains(got, "polecat:bravo") {
+	if !strings.Contains(got, "polecat:bravo") {
 		t.Errorf("findAnyCleanupWisp: expected polecat:bravo label, got: %s", got)
 	}
 }
@@ -338,8 +339,8 @@ func TestUpdateCleanupWispState_UsesCorrectBdUpdateFlags(t *testing.T) {
 	workDir := t.TempDir()
 
 	// UpdateCleanupWispState first calls "bd show <id> --json", then "bd update".
-	// Our fake bd returns "{}" for show, which means extractPolecatFromJSON
-	// returns "" → polecatName defaults to "unknown". Then it calls bd update.
+	// Our fake bd returns valid JSON for show with polecat:testpol label,
+	// so polecatName will be "testpol". Then it calls bd update with new labels.
 	_ = UpdateCleanupWispState(workDir, "gt-wisp-abc", "merged")
 
 	args, err := os.ReadFile(argsLog)
@@ -348,28 +349,25 @@ func TestUpdateCleanupWispState_UsesCorrectBdUpdateFlags(t *testing.T) {
 	}
 	got := string(args)
 
-	// Must use --set-labels, NOT --labels
-	if !contains(got, "--set-labels") {
-		t.Errorf("UpdateCleanupWispState: expected --set-labels flag, got: %s", got)
+	// Must use --set-labels=<label> per label (not --labels)
+	if !strings.Contains(got, "--set-labels=") {
+		t.Errorf("UpdateCleanupWispState: expected --set-labels=<label> flags, got: %s", got)
 	}
-	if contains(got, " --labels ") {
+	// Check for invalid --labels flag in both " --labels " and "--labels=" forms
+	if strings.Contains(got, "--labels") && !strings.Contains(got, "--set-labels") {
 		t.Errorf("UpdateCleanupWispState: must not use --labels (invalid for bd update), got: %s", got)
 	}
-}
 
-// contains checks if s contains substr. Using a helper to avoid importing strings
-// in tests (the production code already imports it).
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+	// Verify individual per-label arguments with correct polecat name from show output
+	if !strings.Contains(got, "--set-labels=cleanup") {
+		t.Errorf("UpdateCleanupWispState: expected --set-labels=cleanup, got: %s", got)
 	}
-	return false
+	if !strings.Contains(got, "--set-labels=polecat:testpol") {
+		t.Errorf("UpdateCleanupWispState: expected --set-labels=polecat:testpol, got: %s", got)
+	}
+	if !strings.Contains(got, "--set-labels=state:merged") {
+		t.Errorf("UpdateCleanupWispState: expected --set-labels=state:merged, got: %s", got)
+	}
 }
 
 func TestExtractDoneIntent_Valid(t *testing.T) {

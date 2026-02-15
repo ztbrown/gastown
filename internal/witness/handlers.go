@@ -749,10 +749,14 @@ func UpdateCleanupWispState(workDir, wispID, newState string) error {
 		polecatName = "unknown"
 	}
 
-	// Update with new state
-	newLabels := strings.Join(CleanupWispLabels(polecatName, newState), ",")
-
-	return util.ExecRun(workDir, "bd", "update", wispID, "--set-labels", newLabels)
+	// Update with new state — pass one --set-labels=<label> per label,
+	// matching the pattern used in agent_state.go and molecule_await_signal.go.
+	labels := CleanupWispLabels(polecatName, newState)
+	args := []string{"update", wispID}
+	for _, l := range labels {
+		args = append(args, "--set-labels="+l)
+	}
+	return util.ExecRun(workDir, "bd", args...)
 }
 
 // extractPolecatFromJSON extracts the polecat name from bd show --json output.
