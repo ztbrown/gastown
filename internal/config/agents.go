@@ -137,7 +137,7 @@ var builtinPresets = map[AgentPreset]*AgentPresetInfo{
 	AgentCodex: {
 		Name:                AgentCodex,
 		Command:             "codex",
-		Args:                []string{"--yolo"},
+		Args:                []string{"--dangerously-bypass-approvals-and-sandbox"},
 		ProcessNames:        []string{"codex"}, // Codex CLI binary
 		SessionIDEnv:        "", // Codex captures from JSONL output
 		ResumeFlag:          "resume",
@@ -414,7 +414,7 @@ func BuildResumeCommand(agentName, sessionID string) string {
 	// Add resume based on style
 	switch info.ResumeStyle {
 	case "subcommand":
-		// e.g., "codex resume <session_id> --yolo"
+		// e.g., "codex resume <session_id> --dangerously-bypass-approvals-and-sandbox"
 		return info.Command + " " + info.ResumeFlag + " " + sessionID + " " + strings.Join(args, " ")
 	case "flag":
 		fallthrough
