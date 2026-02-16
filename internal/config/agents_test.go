@@ -201,6 +201,61 @@ func TestLoadAgentRegistry(t *testing.T) {
 	ResetRegistryForTesting()
 }
 
+func TestGetProcessNamesRespectsRegistryOverride(t *testing.T) {
+	// Regression test: settings/agents.json overrides must be visible to
+	// GetProcessNames so that liveness checks (IsAgentAlive, daemon heartbeat,
+	// cleanup) respect user-configured process names.
+	// Real-world case: NixOS wraps claude as ".claude-unwrapped".
+	ResetRegistryForTesting()
+	t.Cleanup(ResetRegistryForTesting)
+
+	// Before loading any registry, GetProcessNames returns the builtin default.
+	builtinNames := GetProcessNames("claude")
+	if len(builtinNames) != 2 || builtinNames[0] != "node" || builtinNames[1] != "claude" {
+		t.Fatalf("builtin GetProcessNames(claude) = %v, want [node claude]", builtinNames)
+	}
+
+	// Write a settings/agents.json that adds ".claude-unwrapped" to process_names.
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "agents.json")
+
+	customRegistry := AgentRegistry{
+		Version: CurrentAgentRegistryVersion,
+		Agents: map[string]*AgentPresetInfo{
+			"claude": {
+				Name:         "claude",
+				Command:      "claude",
+				Args:         []string{"--dangerously-skip-permissions"},
+				ProcessNames: []string{"node", "claude", ".claude-unwrapped"},
+			},
+		},
+	}
+
+	data, err := json.Marshal(customRegistry)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// After loading the registry, GetProcessNames must return the override.
+	if err := LoadAgentRegistry(configPath); err != nil {
+		t.Fatalf("LoadAgentRegistry: %v", err)
+	}
+
+	got := GetProcessNames("claude")
+	want := []string{"node", "claude", ".claude-unwrapped"}
+	if len(got) != len(want) {
+		t.Fatalf("GetProcessNames(claude) after LoadAgentRegistry = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("GetProcessNames(claude)[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestAgentPresetApprovalFlags(t *testing.T) {
 	t.Parallel()
 	// Verify permissive-approval flags are set correctly for each E2E tested agent.
