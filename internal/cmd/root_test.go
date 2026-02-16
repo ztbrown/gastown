@@ -138,6 +138,8 @@ func TestPersistentPreRunLoadsAgentRegistry(t *testing.T) {
 	// Without this, NixOS users whose Claude binary is ".claude-unwrapped" get
 	// their sessions killed every 3 minutes because the builtin preset only
 	// lists ["node", "claude"].
+	//
+	// NOTE: cannot use t.Parallel() — mutates cwd and global agent registry.
 	config.ResetRegistryForTesting()
 	t.Cleanup(config.ResetRegistryForTesting)
 
@@ -199,5 +201,50 @@ func TestPersistentPreRunLoadsAgentRegistry(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("GetProcessNames(claude)[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestPersistentPreRunMalformedAgentRegistry(t *testing.T) {
+	// Verify that malformed settings/agents.json does not block persistentPreRun
+	// and that the builtin defaults are preserved (graceful fallback).
+	//
+	// NOTE: cannot use t.Parallel() — mutates cwd and global agent registry.
+	config.ResetRegistryForTesting()
+	t.Cleanup(config.ResetRegistryForTesting)
+
+	townRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(townRoot, "mayor"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(townRoot, "mayor", "town.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(townRoot, "settings"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Write invalid JSON to settings/agents.json.
+	if err := os.WriteFile(filepath.Join(townRoot, "settings", "agents.json"), []byte("{malformed"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(townRoot); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	// persistentPreRun should succeed despite malformed agents.json.
+	cmd := &cobra.Command{Use: "version"}
+	if err := persistentPreRun(cmd, nil); err != nil {
+		t.Fatalf("persistentPreRun should not fail on malformed agents.json: %v", err)
+	}
+
+	// Builtin defaults should still be in effect.
+	got := config.GetProcessNames("claude")
+	if len(got) < 2 || got[0] != "node" || got[1] != "claude" {
+		t.Fatalf("GetProcessNames(claude) after malformed registry = %v, want builtin [node claude ...]", got)
 	}
 }

@@ -100,7 +100,10 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 	// Best-effort: if town root not found, the default "gt" prefix is used.
 	if townRoot, err := workspace.FindFromCwd(); err == nil && townRoot != "" {
 		_ = session.InitRegistry(townRoot)
-		_ = config.LoadAgentRegistry(config.DefaultAgentRegistryPath(townRoot))
+		if err := config.LoadAgentRegistry(config.DefaultAgentRegistryPath(townRoot)); err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: failed to load agent registry %s: %v\n",
+				config.DefaultAgentRegistryPath(townRoot), err)
+		}
 	}
 
 	// Get the root command name being run
