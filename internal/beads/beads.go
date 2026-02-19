@@ -247,11 +247,19 @@ func (b *Beads) run(args ...string) ([]byte, error) {
 
 	// Build environment: filter beads env vars when in isolated mode (tests)
 	// to prevent routing to production databases.
+	// Always strip any inherited BEADS_DIR before setting ours: getenv() returns
+	// the first occurrence, so an inherited BEADS_DIR (e.g., from the first rig's
+	// shell context) would shadow the explicit value we append. This is the root
+	// cause of GH #803 where adding a second rig used the first rig's prefix.
 	var env []string
 	if b.isolated {
 		env = filterBeadsEnv(os.Environ())
 	} else {
-		env = os.Environ()
+		for _, e := range os.Environ() {
+			if !strings.HasPrefix(e, "BEADS_DIR=") {
+				env = append(env, e)
+			}
+		}
 	}
 	cmd.Env = append(env, "BEADS_DIR="+beadsDir)
 
