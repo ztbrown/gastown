@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1248,4 +1249,66 @@ esac
 		t.Errorf("expected bd update for bead reset, got log:\n%s", logContent)
 	}
 }
+
+// TestNukePolecatRaceGuard_Logic verifies the age-check logic that prevents
+// killing a freshly-spawned polecat session when processing a stale
+// POLECAT_DONE message (gt-hhnn race condition).
+//
+// We test the conditional logic directly since NukePolecat requires a live
+// tmux environment for end-to-end testing.
+func TestNukePolecatRaceGuard_Logic(t *testing.T) {
+	now := time.Now()
+	msgTime := now.Add(-5 * time.Second) // POLECAT_DONE sent 5s ago
+
+	t.Run("session older than message — safe to nuke", func(t *testing.T) {
+		// Session was running when message was sent
+		sessionCreated := now.Add(-60 * time.Second)
+		notNewerThan := msgTime
+
+		// Safe: session existed before the message
+		shouldSkip := !notNewerThan.IsZero() && sessionCreated.After(notNewerThan)
+		if shouldSkip {
+			t.Errorf("expected session older than message to be safe to nuke, but logic says skip")
+		}
+	})
+
+	t.Run("session newer than message — fresh polecat, must not nuke", func(t *testing.T) {
+		// New session spawned AFTER the POLECAT_DONE was sent
+		sessionCreated := now.Add(2 * time.Second) // spawned 2s in future from msg
+		notNewerThan := msgTime
+
+		// Unsafe: session is newer than the POLECAT_DONE message
+		shouldSkip := !notNewerThan.IsZero() && sessionCreated.After(notNewerThan)
+		if !shouldSkip {
+			t.Errorf("expected session newer than message to be skipped (race guard), but logic says nuke")
+		}
+	})
+
+	t.Run("zero notNewerThan — no age check performed", func(t *testing.T) {
+		// All non-POLECAT_DONE paths use time.Time{} to skip the check
+		sessionCreated := now.Add(10 * time.Second) // even a future session
+		notNewerThan := time.Time{}                 // zero = no constraint
+
+		// Zero time disables the guard entirely
+		shouldSkip := !notNewerThan.IsZero() && sessionCreated.After(notNewerThan)
+		if shouldSkip {
+			t.Errorf("zero notNewerThan should disable age check, but logic says skip")
+		}
+	})
+}
+
+// TestErrSessionTooNew verifies the sentinel error is defined and detectable
+// with errors.Is, so callers can distinguish race-guard skips from real failures.
+func TestErrSessionTooNew(t *testing.T) {
+	if ErrSessionTooNew == nil {
+		t.Fatal("ErrSessionTooNew must not be nil")
+	}
+
+	// Wrapping via fmt.Errorf %w should be detectable
+	wrapped := fmt.Errorf("outer: %w: session gt-slit created at T+12", ErrSessionTooNew)
+	if !errors.Is(wrapped, ErrSessionTooNew) {
+		t.Errorf("errors.Is on wrapped ErrSessionTooNew returned false; sentinel must use errors.New")
+	}
+}
+
 

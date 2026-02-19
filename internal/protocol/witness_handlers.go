@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/witness"
@@ -62,7 +63,7 @@ func (h *DefaultWitnessHandler) HandleMerged(payload *MergedPayload) error {
 
 	// Initiate polecat cleanup using AutoNukeIfClean
 	// This verifies cleanup_status before nuking to prevent work loss.
-	nukeResult := witness.AutoNukeIfClean(h.WorkDir, h.Rig, payload.Polecat)
+	nukeResult := witness.AutoNukeIfClean(h.WorkDir, h.Rig, payload.Polecat, time.Time{})
 	if nukeResult.Nuked {
 		fmt.Fprintf(h.Output, "[Witness] ✓ Auto-nuked polecat %s: %s\n", payload.Polecat, nukeResult.Reason)
 	} else if nukeResult.Skipped {
@@ -122,7 +123,7 @@ func (h *DefaultWitnessHandler) HandlePolecatDone(payload *PolecatDonePayload) e
 		_, _ = fmt.Fprintf(h.Output, "  Polecat already pushed to main. Proceeding with cleanup only.\n")
 
 		// Initiate polecat cleanup (same as HandleMerged)
-		nukeResult := witness.AutoNukeIfClean(h.WorkDir, h.Rig, payload.Polecat)
+		nukeResult := witness.AutoNukeIfClean(h.WorkDir, h.Rig, payload.Polecat, time.Time{})
 		if nukeResult.Nuked {
 			fmt.Fprintf(h.Output, "[Witness] ✓ Auto-nuked polecat %s: %s\n", payload.Polecat, nukeResult.Reason)
 		} else if nukeResult.Skipped {

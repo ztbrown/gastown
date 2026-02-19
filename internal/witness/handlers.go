@@ -2,6 +2,7 @@ package witness
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +30,11 @@ func initRegistryFromWorkDir(workDir string) {
 		_ = session.InitRegistry(townRoot)
 	}
 }
+
+// ErrSessionTooNew is returned by NukePolecat when the session creation time
+// is after the notNewerThan timestamp (race condition guard for gt-hhnn).
+// Callers should treat this as a skip, not a failure.
+var ErrSessionTooNew = errors.New("session is newer than trigger timestamp (fresh session, not the done polecat)")
 
 // HandlerResult tracks the result of handling a protocol message.
 type HandlerResult struct {
@@ -140,11 +146,20 @@ func HandlePolecatDone(workDir, rigName string, msg *mail.Message, router *mail.
 		return result
 	}
 
-	// No pending MR - try to auto-nuke immediately
-	nukeResult := AutoNukeIfClean(workDir, rigName, payload.PolecatName)
+	// No pending MR - try to auto-nuke immediately.
+	// Pass msg.Timestamp so NukePolecat can guard against the race where a new
+	// polecat session starts between POLECAT_DONE receipt and the actual kill (gt-hhnn).
+	nukeResult := AutoNukeIfClean(workDir, rigName, payload.PolecatName, msg.Timestamp)
 	if nukeResult.Nuked {
 		result.Handled = true
 		result.Action = fmt.Sprintf("auto-nuked %s (exit=%s, no MR): %s", payload.PolecatName, payload.Exit, nukeResult.Reason)
+		return result
+	}
+	if nukeResult.RaceGuarded {
+		// Race guard triggered: a fresh session is using the same slot.
+		// The original polecat already self-cleaned. Do not create a cleanup wisp.
+		result.Handled = true
+		result.Action = fmt.Sprintf("race-guarded nuke for %s (exit=%s): %s", payload.PolecatName, payload.Exit, nukeResult.Reason)
 		return result
 	}
 	if nukeResult.Error != nil {
@@ -199,8 +214,9 @@ func HandleLifecycleShutdown(workDir, rigName string, msg *mail.Message) *Handle
 	}
 	polecatName := matches[1]
 
-	// Shutdown means no pending work - try to auto-nuke immediately
-	nukeResult := AutoNukeIfClean(workDir, rigName, polecatName)
+	// Shutdown means no pending work - try to auto-nuke immediately.
+	// Pass msg.Timestamp for the same race guard used by HandlePolecatDone (gt-hhnn).
+	nukeResult := AutoNukeIfClean(workDir, rigName, polecatName, msg.Timestamp)
 	if nukeResult.Nuked {
 		result.Handled = true
 		result.Action = fmt.Sprintf("auto-nuked %s (shutdown): %s", polecatName, nukeResult.Reason)
@@ -331,7 +347,7 @@ func HandleMerged(workDir, rigName string, msg *mail.Message) *HandlerResult {
 	case "clean":
 		// Safe to nuke - polecat has confirmed clean state
 		// Execute the nuke immediately
-		if err := NukePolecat(workDir, rigName, payload.PolecatName); err != nil {
+		if err := NukePolecat(workDir, rigName, payload.PolecatName, time.Time{}); err != nil {
 			result.Handled = true
 			result.WispCreated = wispID
 			result.Error = fmt.Errorf("nuke failed for %s: %w", payload.PolecatName, err)
@@ -366,7 +382,7 @@ func HandleMerged(workDir, rigName string, msg *mail.Message) *HandlerResult {
 	default:
 		// Unknown or no status - we already verified commit is on main above
 		// Safe to nuke since verification passed
-		if err := NukePolecat(workDir, rigName, payload.PolecatName); err != nil {
+		if err := NukePolecat(workDir, rigName, payload.PolecatName, time.Time{}); err != nil {
 			result.Handled = true
 			result.WispCreated = wispID
 			result.Error = fmt.Errorf("nuke failed for %s: %w", payload.PolecatName, err)
@@ -799,7 +815,12 @@ func extractPolecatFromJSON(output string) string {
 // NukePolecat executes the actual nuke operation for a polecat.
 // This kills the tmux session, removes the worktree, and cleans up beads.
 // Should only be called after all safety checks pass.
-func NukePolecat(workDir, rigName, polecatName string) error {
+//
+// notNewerThan: if non-zero, the session is only killed if its creation time
+// is BEFORE this timestamp. This prevents killing a freshly-spawned session
+// when a stale POLECAT_DONE message races with a new session start (gt-hhnn).
+// Pass time.Time{} to skip this check (safe for non-POLECAT_DONE paths).
+func NukePolecat(workDir, rigName, polecatName string, notNewerThan time.Time) error {
 	// CRITICAL: Kill the tmux session FIRST and unconditionally.
 	// We do this explicitly here because gt polecat nuke may fail to kill the
 	// session due to rig loading issues or race conditions with IsRunning checks.
@@ -810,6 +831,18 @@ func NukePolecat(workDir, rigName, polecatName string) error {
 
 	// Check if session exists and kill it
 	if running, _ := t.HasSession(sessionName); running {
+		// Race condition guard (gt-hhnn): verify the session isn't newer than
+		// the POLECAT_DONE message that triggered this nuke. A session created
+		// after the message was sent belongs to a freshly-spawned polecat.
+		if !notNewerThan.IsZero() {
+			if createdAt, err := session.SessionCreatedAt(sessionName); err == nil {
+				if createdAt.After(notNewerThan) {
+					return fmt.Errorf("%w: session %s created at %s, trigger at %s",
+						ErrSessionTooNew, sessionName,
+						createdAt.Format(time.RFC3339), notNewerThan.Format(time.RFC3339))
+				}
+			}
+		}
 		// Try graceful shutdown first (Ctrl-C), then force kill
 		_ = t.SendKeysRaw(sessionName, "C-c")
 		// Brief delay for graceful handling
@@ -833,18 +866,23 @@ func NukePolecat(workDir, rigName, polecatName string) error {
 
 // NukePolecatResult contains the result of an auto-nuke attempt.
 type NukePolecatResult struct {
-	Nuked   bool
-	Skipped bool
-	Reason  string
-	Error   error
+	Nuked       bool
+	Skipped     bool
+	RaceGuarded bool // true when skip is due to race guard (session newer than trigger)
+	Reason      string
+	Error       error
 }
 
 // AutoNukeIfClean checks if a polecat is safe to nuke and nukes it if so.
 // This is used for orphaned polecats (no hooked work, no pending MR).
 // With the self-cleaning model, polecats should self-nuke on completion.
 // An orphan is likely from a crash before gt done completed.
+//
+// notNewerThan: forwarded to NukePolecat for race condition guard (gt-hhnn).
+// Pass time.Time{} to skip the age check (safe for non-POLECAT_DONE paths).
+//
 // Returns whether the nuke was performed and any error.
-func AutoNukeIfClean(workDir, rigName, polecatName string) *NukePolecatResult {
+func AutoNukeIfClean(workDir, rigName, polecatName string, notNewerThan time.Time) *NukePolecatResult {
 	result := &NukePolecatResult{}
 
 	// Check cleanup_status from agent bead
@@ -853,9 +891,16 @@ func AutoNukeIfClean(workDir, rigName, polecatName string) *NukePolecatResult {
 	switch cleanupStatus {
 	case "clean":
 		// Safe to nuke
-		if err := NukePolecat(workDir, rigName, polecatName); err != nil {
-			result.Error = err
-			result.Reason = fmt.Sprintf("nuke failed: %v", err)
+		if err := NukePolecat(workDir, rigName, polecatName, notNewerThan); err != nil {
+			if errors.Is(err, ErrSessionTooNew) {
+				// Race guard: session is fresh, not the done polecat. Skip silently.
+				result.Skipped = true
+				result.RaceGuarded = true
+				result.Reason = fmt.Sprintf("skipped: %v", err)
+			} else {
+				result.Error = err
+				result.Reason = fmt.Sprintf("nuke failed: %v", err)
+			}
 		} else {
 			result.Nuked = true
 			result.Reason = "auto-nuked (cleanup_status=clean, no MR)"
@@ -875,9 +920,15 @@ func AutoNukeIfClean(workDir, rigName, polecatName string) *NukePolecatResult {
 			result.Reason = fmt.Sprintf("skipped: couldn't verify git state: %v", err)
 		} else if onMain {
 			// Commit is on main, likely safe
-			if err := NukePolecat(workDir, rigName, polecatName); err != nil {
-				result.Error = err
-				result.Reason = fmt.Sprintf("nuke failed: %v", err)
+			if err := NukePolecat(workDir, rigName, polecatName, notNewerThan); err != nil {
+				if errors.Is(err, ErrSessionTooNew) {
+					result.Skipped = true
+					result.RaceGuarded = true
+					result.Reason = fmt.Sprintf("skipped: %v", err)
+				} else {
+					result.Error = err
+					result.Reason = fmt.Sprintf("nuke failed: %v", err)
+				}
 			} else {
 				result.Nuked = true
 				result.Reason = "auto-nuked (commit on main, no cleanup_status)"
@@ -1066,7 +1117,7 @@ func DetectZombiePolecats(workDir, rigName string, router *mail.Router) *DetectZ
 					HookBead:    stuckHookBead,
 					Action:      fmt.Sprintf("killed-stuck-session (done-intent age=%v)", time.Since(doneIntent.Timestamp).Round(time.Second)),
 				}
-				if err := NukePolecat(workDir, rigName, polecatName); err != nil {
+				if err := NukePolecat(workDir, rigName, polecatName, time.Time{}); err != nil {
 					zombie.Error = err
 					zombie.Action = fmt.Sprintf("kill-stuck-session-failed: %v", err)
 				}
@@ -1093,7 +1144,7 @@ func DetectZombiePolecats(workDir, rigName string, router *mail.Router) *DetectZ
 					HookBead:    deadAgentHookBead,
 					Action:      "killed-agent-dead-session",
 				}
-				if err := NukePolecat(workDir, rigName, polecatName); err != nil {
+				if err := NukePolecat(workDir, rigName, polecatName, time.Time{}); err != nil {
 					zombie.Error = err
 					zombie.Action = fmt.Sprintf("kill-agent-dead-session-failed: %v", err)
 				}
@@ -1116,7 +1167,7 @@ func DetectZombiePolecats(workDir, rigName string, router *mail.Router) *DetectZ
 						HookBead:    hookBead,
 						Action:      "nuke-bead-closed-polecat",
 					}
-					if err := NukePolecat(workDir, rigName, polecatName); err != nil {
+					if err := NukePolecat(workDir, rigName, polecatName, time.Time{}); err != nil {
 						zombie.Error = err
 						zombie.Action = fmt.Sprintf("nuke-bead-closed-failed: %v", err)
 					}
@@ -1146,7 +1197,7 @@ func DetectZombiePolecats(workDir, rigName string, router *mail.Router) *DetectZ
 				HookBead:    diHookBead,
 				Action:      fmt.Sprintf("auto-nuked (done-intent age=%v, type=%s)", age.Round(time.Second), doneIntent.ExitType),
 			}
-			if err := NukePolecat(workDir, rigName, polecatName); err != nil {
+			if err := NukePolecat(workDir, rigName, polecatName, time.Time{}); err != nil {
 				zombie.Error = err
 				zombie.Action = fmt.Sprintf("nuke-failed (done-intent): %v", err)
 			}
@@ -1197,7 +1248,7 @@ func DetectZombiePolecats(workDir, rigName string, router *mail.Router) *DetectZ
 		switch cleanupStatus {
 		case "clean":
 			// Polecat ran gt done and confirmed clean state — safe to auto-nuke.
-			nukeResult := AutoNukeIfClean(workDir, rigName, polecatName)
+			nukeResult := AutoNukeIfClean(workDir, rigName, polecatName, time.Time{})
 			if nukeResult.Nuked {
 				zombie.Action = "auto-nuked"
 			} else if nukeResult.Skipped {
@@ -1216,7 +1267,7 @@ func DetectZombiePolecats(workDir, rigName string, router *mail.Router) *DetectZ
 			// the polecat likely crashed before running gt done. AutoNukeIfClean
 			// handles this via verifyCommitOnMain fallback: only nukes if the
 			// polecat's commit is already on main, otherwise skips.
-			nukeResult := AutoNukeIfClean(workDir, rigName, polecatName)
+			nukeResult := AutoNukeIfClean(workDir, rigName, polecatName, time.Time{})
 			if nukeResult.Nuked {
 				zombie.Action = "auto-nuked"
 			} else if nukeResult.Skipped {
