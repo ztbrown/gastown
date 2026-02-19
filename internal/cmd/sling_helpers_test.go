@@ -38,13 +38,13 @@ func TestNudgeRefinerySessionName(t *testing.T) {
 			name:        "simple rig name",
 			rigName:     "gastown",
 			message:     "MR submitted: gt-abc branch=polecat/Nux/gt-abc",
-			wantSession: "gt-refinery",
+			wantSession: "gt-gastown-refinery",
 		},
 		{
 			name:        "hyphenated rig name",
 			rigName:     "my-project",
 			message:     "MR submitted: mp-xyz branch=polecat/Toast/mp-xyz",
-			wantSession: "mp-refinery",
+			wantSession: "gt-my-project-refinery",
 		},
 	}
 

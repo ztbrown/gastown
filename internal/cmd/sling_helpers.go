@@ -557,7 +557,7 @@ func wakeRigAgents(rigName string) {
 
 	// Queue nudge to witness for cooperative delivery.
 	// This avoids interrupting in-flight tool calls.
-	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
+	witnessSession := session.WitnessSessionName(rigName)
 	townRoot, _ := workspace.FindFromCwd()
 	if townRoot != "" {
 		if err := nudge.Enqueue(townRoot, witnessSession, nudge.QueuedNudge{
@@ -577,7 +577,7 @@ func wakeRigAgents(rigName string) {
 // Uses the nudge queue for cooperative delivery so we don't interrupt
 // in-flight tool calls. The refinery picks this up at its next turn boundary.
 func nudgeRefinery(rigName, message string) {
-	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
+	refinerySession := session.RefinerySessionName(rigName)
 
 	// Test hook: log nudge for test observability (same pattern as GT_TEST_ATTACHED_MOLECULE_LOG)
 	if logPath := os.Getenv("GT_TEST_NUDGE_LOG"); logPath != "" {

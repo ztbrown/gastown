@@ -32,19 +32,19 @@ func TestOverseerSessionName(t *testing.T) {
 
 func TestWitnessSessionName(t *testing.T) {
 	tests := []struct {
-		rigPrefix string
-		want      string
+		rigName string
+		want    string
 	}{
-		{"gt", "gt-witness"},
-		{"bd", "bd-witness"},
-		{"hop", "hop-witness"},
-		{"sky", "sky-witness"},
+		{"gastown", "gt-gastown-witness"},
+		{"beads", "gt-beads-witness"},
+		{"untitled_golf_game", "gt-untitled_golf_game-witness"},
+		{"my-project", "gt-my-project-witness"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.rigPrefix, func(t *testing.T) {
-			got := WitnessSessionName(tt.rigPrefix)
+		t.Run(tt.rigName, func(t *testing.T) {
+			got := WitnessSessionName(tt.rigName)
 			if got != tt.want {
-				t.Errorf("WitnessSessionName(%q) = %q, want %q", tt.rigPrefix, got, tt.want)
+				t.Errorf("WitnessSessionName(%q) = %q, want %q", tt.rigName, got, tt.want)
 			}
 		})
 	}
@@ -52,18 +52,18 @@ func TestWitnessSessionName(t *testing.T) {
 
 func TestRefinerySessionName(t *testing.T) {
 	tests := []struct {
-		rigPrefix string
-		want      string
+		rigName string
+		want    string
 	}{
-		{"gt", "gt-refinery"},
-		{"bd", "bd-refinery"},
-		{"hop", "hop-refinery"},
+		{"gastown", "gt-gastown-refinery"},
+		{"beads", "gt-beads-refinery"},
+		{"untitled_golf_game", "gt-untitled_golf_game-refinery"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.rigPrefix, func(t *testing.T) {
-			got := RefinerySessionName(tt.rigPrefix)
+		t.Run(tt.rigName, func(t *testing.T) {
+			got := RefinerySessionName(tt.rigName)
 			if got != tt.want {
-				t.Errorf("RefinerySessionName(%q) = %q, want %q", tt.rigPrefix, got, tt.want)
+				t.Errorf("RefinerySessionName(%q) = %q, want %q", tt.rigName, got, tt.want)
 			}
 		})
 	}

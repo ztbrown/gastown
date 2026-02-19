@@ -271,9 +271,9 @@ func deriveSessionName(rig, role, name string) string {
 	case "deacon":
 		return session.DeaconSessionName()
 	case "witness":
-		return session.WitnessSessionName(session.PrefixFor(rig))
+		return session.WitnessSessionName(rig)
 	case "refinery":
-		return session.RefinerySessionName(session.PrefixFor(rig))
+		return session.RefinerySessionName(rig)
 	case "crew":
 		return session.CrewSessionName(session.PrefixFor(rig), name)
 	case "polecat":

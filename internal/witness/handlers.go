@@ -644,7 +644,7 @@ Verified: clean git state`,
 // tool calls. The refinery will pick this up at its next turn boundary.
 func nudgeRefinery(townRoot, rigName string) error {
 	_ = session.InitRegistry(townRoot)
-	sessionName := session.RefinerySessionName(session.PrefixFor(rigName))
+	sessionName := session.RefinerySessionName(rigName)
 
 	// Check if refinery is running
 	t := tmux.NewTmux()

@@ -133,8 +133,8 @@ func parseRigInfraSession(sess string) string {
 // cycleRigInfraSession cycles between witness and refinery sessions for a rig.
 func cycleRigInfraSession(direction int, currentSession, rig string) error {
 	// Find running infra sessions for this rig
-	witnessSession := sessionpkg.WitnessSessionName(sessionpkg.PrefixFor(rig))
-	refinerySession := sessionpkg.RefinerySessionName(sessionpkg.PrefixFor(rig))
+	witnessSession := sessionpkg.WitnessSessionName(rig)
+	refinerySession := sessionpkg.RefinerySessionName(rig)
 
 	var sessions []string
 	allSessions, err := listTmuxSessions()

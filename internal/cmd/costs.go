@@ -1081,14 +1081,14 @@ func deriveSessionName() string {
 		return session.DeaconSessionName()
 	}
 
-	// Rig-based roles (witness, refinery): {prefix}-{role}
+	// Rig-based roles (witness, refinery): gt-{rig}-{role}
 	if role != "" && rig != "" {
 		prefix := session.PrefixFor(rig)
 		switch role {
 		case "witness":
-			return session.WitnessSessionName(prefix)
+			return session.WitnessSessionName(rig)
 		case "refinery":
-			return session.RefinerySessionName(prefix)
+			return session.RefinerySessionName(rig)
 		default:
 			return session.PolecatSessionName(prefix, role)
 		}

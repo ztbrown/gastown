@@ -49,43 +49,43 @@ func TestParseSessionName(t *testing.T) {
 			wantName: "boot",
 		},
 
-		// Witness (new format: <prefix>-witness)
+		// Witness (canonical format: gt-<rig>-witness)
 		{
 			name:       "witness gastown",
-			session:    "gt-witness",
+			session:    "gt-gastown-witness",
 			wantRole:   RoleWitness,
 			wantRig:    "gastown",
 			wantPrefix: "gt",
 		},
 		{
 			name:       "witness beads",
-			session:    "bd-witness",
+			session:    "gt-beads-witness",
 			wantRole:   RoleWitness,
 			wantRig:    "beads",
-			wantPrefix: "bd",
+			wantPrefix: "gt",
 		},
 		{
 			name:       "witness hop",
-			session:    "hop-witness",
+			session:    "gt-hop-witness",
 			wantRole:   RoleWitness,
 			wantRig:    "hop",
-			wantPrefix: "hop",
+			wantPrefix: "gt",
 		},
 
-		// Refinery (new format: <prefix>-refinery)
+		// Refinery (canonical format: gt-<rig>-refinery)
 		{
 			name:       "refinery gastown",
-			session:    "gt-refinery",
+			session:    "gt-gastown-refinery",
 			wantRole:   RoleRefinery,
 			wantRig:    "gastown",
 			wantPrefix: "gt",
 		},
 		{
-			name:       "refinery multi-word prefix",
-			session:    "mp-refinery",
+			name:       "refinery my-project",
+			session:    "gt-my-project-refinery",
 			wantRole:   RoleRefinery,
 			wantRig:    "my-project",
-			wantPrefix: "mp",
+			wantPrefix: "gt",
 		},
 
 		// Crew (new format: <prefix>-crew-<name>)
@@ -221,12 +221,12 @@ func TestAgentIdentity_SessionName(t *testing.T) {
 		{
 			name:     "witness",
 			identity: AgentIdentity{Role: RoleWitness, Rig: "gastown", Prefix: "gt"},
-			want:     "gt-witness",
+			want:     "gt-gastown-witness",
 		},
 		{
 			name:     "refinery",
 			identity: AgentIdentity{Role: RoleRefinery, Rig: "beads", Prefix: "bd"},
-			want:     "bd-refinery",
+			want:     "gt-beads-refinery",
 		},
 		{
 			name:     "crew",
@@ -311,8 +311,8 @@ func TestParseSessionName_RoundTrip(t *testing.T) {
 	sessions := []string{
 		"hq-mayor",
 		"hq-deacon",
-		"gt-witness",
-		"bd-refinery",
+		"gt-gastown-witness",
+		"gt-beads-refinery",
 		"gt-crew-max",
 		"gt-morsov",
 		"hop-ostrom",
