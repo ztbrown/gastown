@@ -353,8 +353,10 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	// Accept bypass permissions warning dialog if it appears
 	debugSession("AcceptBypassPermissionsWarning", m.tmux.AcceptBypassPermissionsWarning(sessionID))
 
-	// Wait for runtime to be fully ready at the prompt (not just started)
-	runtime.SleepForReadyDelay(runtimeConfig)
+	// Wait for runtime to be fully ready at the prompt (not just started).
+	// Uses prompt-detection polling when ReadyPromptPrefix is configured;
+	// falls back to fixed ReadyDelayMs for agents without prompt detection.
+	debugSession("WaitForRuntimeReady", m.tmux.WaitForRuntimeReady(sessionID, runtimeConfig, constants.ClaudeStartTimeout))
 
 	// Handle fallback nudges for non-hook agents.
 	// See StartupFallbackInfo in runtime package for the fallback matrix.

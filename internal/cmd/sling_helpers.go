@@ -330,8 +330,9 @@ func ensureAgentReady(sessionName string) error {
 		}
 		// Fall through to apply startup delay for young sessions.
 	} else {
-		// Agent not running yet - wait for it to start (shell → program transition)
-		if err := t.WaitForCommand(sessionName, constants.SupportedShells, constants.ClaudeStartTimeout); err != nil {
+		// Agent not running yet - wait for it to start (shell → program transition).
+		// Uses exponential backoff: 100ms, 200ms, 400ms, ... capped at 5s per retry.
+		if err := waitForAgentWithBackoff(t, sessionName, constants.ClaudeStartTimeout); err != nil {
 			return fmt.Errorf("waiting for agent to start: %w", err)
 		}
 	}
@@ -388,6 +389,40 @@ func isSessionYoung(sessionName string, maxAge time.Duration) bool {
 		return false
 	}
 	return time.Since(time.Unix(createdUnix, 0)) < maxAge
+}
+
+// waitForAgentWithBackoff polls until the pane is no longer running a shell
+// (indicating the agent has started), using exponential backoff between retries.
+// Retry delays: 100ms, 200ms, 400ms, ... capped at 5s per retry.
+// Returns nil when the agent is detected, or an error if timeout expires.
+func waitForAgentWithBackoff(t *tmux.Tmux, sessionName string, timeout time.Duration) error {
+	const (
+		initialDelay = 100 * time.Millisecond
+		maxDelay     = 5 * time.Second
+	)
+	deadline := time.Now().Add(timeout)
+	delay := initialDelay
+	for time.Now().Before(deadline) {
+		cmd, err := t.GetPaneCommand(sessionName)
+		if err == nil {
+			excluded := false
+			for _, s := range constants.SupportedShells {
+				if cmd == s {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				return nil // Agent has started (pane is no longer running a shell)
+			}
+		}
+		time.Sleep(delay)
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+	}
+	return fmt.Errorf("timeout waiting for agent to start (tried for %v)", timeout)
 }
 
 // detectCloneRoot finds the root of the current git clone.
