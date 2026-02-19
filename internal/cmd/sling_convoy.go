@@ -30,9 +30,9 @@ func isTrackedByConvoy(beadID string) string {
 		return ""
 	}
 
-	// Primary: Use bd dep list to find what tracks this issue (direction=up)
-	// This is authoritative when cross-rig routing works
-	depCmd := exec.Command("bd", "--no-daemon", "dep", "list", beadID, "--direction=up", "--type=tracks", "--json")
+	// Use bd dep list to find what tracks this issue (direction=up)
+	// Filter for open convoys in the results
+	depCmd := exec.Command("bd", "dep", "list", beadID, "--direction=up", "--type=tracks", "--json")
 	depCmd.Dir = townRoot
 
 	out, err := depCmd.Output()
@@ -61,7 +61,7 @@ func isTrackedByConvoy(beadID string) string {
 // Returns convoy ID if found, empty string otherwise.
 func findConvoyByDescription(townRoot, beadID string) string {
 	// Query all open convoys from HQ
-	listCmd := exec.Command("bd", "--no-daemon", "list", "--type=convoy", "--status=open", "--json")
+	listCmd := exec.Command("bd", "list", "--type=convoy", "--status=open", "--json")
 	listCmd.Dir = filepath.Join(townRoot, ".beads")
 
 	out, err := listCmd.Output()
@@ -117,7 +117,7 @@ func createAutoConvoy(beadID, beadTitle string) (string, error) {
 		createArgs = append(createArgs, "--force")
 	}
 
-	createCmd := exec.Command("bd", append([]string{"--no-daemon"}, createArgs...)...)
+	createCmd := exec.Command("bd", append([]string{}, createArgs...)...)
 	createCmd.Dir = townBeads
 	createCmd.Stderr = os.Stderr
 
@@ -127,7 +127,7 @@ func createAutoConvoy(beadID, beadTitle string) (string, error) {
 
 	// Add tracking relation: convoy tracks the issue
 	trackBeadID := formatTrackBeadID(beadID)
-	depArgs := []string{"--no-daemon", "dep", "add", convoyID, trackBeadID, "--type=tracks"}
+	depArgs := []string{"dep", "add", convoyID, trackBeadID, "--type=tracks"}
 	depCmd := exec.Command("bd", depArgs...)
 	depCmd.Dir = townBeads
 	depCmd.Stderr = os.Stderr

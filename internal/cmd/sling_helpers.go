@@ -75,8 +75,14 @@ type beadInfo struct {
 // Checks bead existence using bd show.
 // Resolves the rig directory from the bead's prefix for correct dolt access.
 func verifyBeadExists(beadID string) error {
-	cmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
-	cmd.Dir = resolveBeadDir(beadID)
+	cmd := exec.Command("bd", "show", beadID, "--json", "--allow-stale")
+	// Run from town root so bd can find routes.jsonl for prefix-based routing.
+	// Do NOT set BEADS_DIR - that overrides routing and breaks rig bead resolution.
+	if townRoot, err := workspace.FindFromCwd(); err == nil {
+		cmd.Dir = townRoot
+	}
+	// Use Output() instead of Run() to detect bd --no-daemon exit 0 bug:
+	// when issue not found, --no-daemon exits 0 but produces empty stdout.
 	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("bead '%s' not found (bd show failed)", beadID)
@@ -90,8 +96,11 @@ func verifyBeadExists(beadID string) error {
 // getBeadInfo returns status and assignee for a bead.
 // Resolves the rig directory from the bead's prefix for correct dolt access.
 func getBeadInfo(beadID string) (*beadInfo, error) {
-	cmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
-	cmd.Dir = resolveBeadDir(beadID)
+	cmd := exec.Command("bd", "show", beadID, "--json", "--allow-stale")
+	// Run from town root so bd can find routes.jsonl for prefix-based routing.
+	if townRoot, err := workspace.FindFromCwd(); err == nil {
+		cmd.Dir = townRoot
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("bead '%s' not found", beadID)
@@ -114,8 +123,7 @@ func getBeadInfo(beadID string) (*beadInfo, error) {
 // This enables no-tmux mode where agents discover args via gt prime / bd show.
 func storeArgsInBead(beadID, args string) error {
 	// Get the bead to preserve existing description content
-	showCmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
-	showCmd.Dir = resolveBeadDir(beadID)
+	showCmd := exec.Command("bd", "show", beadID, "--json", "--allow-stale")
 	out, err := showCmd.Output()
 	if err != nil {
 		return fmt.Errorf("fetching bead: %w", err)

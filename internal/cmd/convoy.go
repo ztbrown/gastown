@@ -1327,7 +1327,7 @@ func getTrackedIssues(townBeads, convoyID string) []trackedIssueInfo {
 	// Use bd dep list to get tracked dependencies
 	// Run from town root (parent of .beads) so bd routes correctly
 	townRoot := filepath.Dir(townBeads)
-	depCmd := exec.Command("bd", "--no-daemon", "dep", "list", convoyID, "--direction=down", "--type=tracks", "--json")
+	depCmd := exec.Command("bd", "dep", "list", convoyID, "--direction=down", "--type=tracks", "--json")
 	depCmd.Dir = townRoot
 
 	var stdout bytes.Buffer
@@ -1399,7 +1399,7 @@ func getExternalIssueDetails(townBeads, rigName, issueID string) *issueDetails {
 
 	// Query the rig database by running bd show from the rig directory
 	// Use --allow-stale to handle cases where JSONL and DB are out of sync
-	showCmd := exec.Command("bd", "--no-daemon", "show", issueID, "--json", "--allow-stale")
+	showCmd := exec.Command("bd", "show", issueID, "--json", "--allow-stale")
 	showCmd.Dir = rigDir // Set working directory to rig directory
 	var stdout bytes.Buffer
 	showCmd.Stdout = &stdout
@@ -1454,7 +1454,7 @@ func getIssueDetailsBatch(issueIDs []string) map[string]*issueDetails {
 
 	// Build args: bd --no-daemon show id1 id2 id3 ... --json
 	// Use --no-daemon to ensure fresh data (avoid stale cache from daemon)
-	args := append([]string{"--no-daemon", "show"}, issueIDs...)
+	args := append([]string{"show"}, issueIDs...)
 	args = append(args, "--json")
 
 	showCmd := exec.Command("bd", args...)
@@ -1501,7 +1501,7 @@ func getIssueDetailsBatch(issueIDs []string) map[string]*issueDetails {
 func getIssueDetails(issueID string) *issueDetails {
 	// Use bd show with routing - it should find the issue in the right rig
 	// Use --no-daemon to ensure fresh data (avoid stale cache)
-	showCmd := exec.Command("bd", "--no-daemon", "show", issueID, "--json")
+	showCmd := exec.Command("bd", "show", issueID, "--json")
 	var stdout bytes.Buffer
 	showCmd.Stdout = &stdout
 
