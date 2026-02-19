@@ -161,6 +161,7 @@ var (
 	polecatNukeAll           bool
 	polecatNukeDryRun        bool
 	polecatNukeForce         bool
+	polecatNukeVerify        bool
 	polecatCheckRecoveryJSON bool
 )
 
@@ -202,13 +203,15 @@ SAFETY CHECKS: The command refuses to nuke a polecat if:
 
 Use --force to bypass safety checks (LOSES WORK).
 Use --dry-run to see what would happen and safety check status.
+Use --verify to confirm filesystem cleanup was complete after nuke.
 
 Examples:
   gt polecat nuke greenplace/Toast
   gt polecat nuke greenplace/Toast greenplace/Furiosa
   gt polecat nuke greenplace --all
   gt polecat nuke greenplace --all --dry-run
-  gt polecat nuke greenplace/Toast --force  # bypass safety checks`,
+  gt polecat nuke greenplace/Toast --force   # bypass safety checks
+  gt polecat nuke greenplace/Toast --verify  # verify cleanup completeness`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runPolecatNuke,
 }
@@ -310,6 +313,7 @@ func init() {
 	polecatNukeCmd.Flags().BoolVar(&polecatNukeAll, "all", false, "Nuke all polecats in the rig")
 	polecatNukeCmd.Flags().BoolVar(&polecatNukeDryRun, "dry-run", false, "Show what would be nuked without doing it")
 	polecatNukeCmd.Flags().BoolVarP(&polecatNukeForce, "force", "f", false, "Force nuke, bypassing all safety checks (LOSES WORK)")
+	polecatNukeCmd.Flags().BoolVar(&polecatNukeVerify, "verify", false, "Verify filesystem cleanup was complete after nuke")
 
 	// Check-recovery flags
 	polecatCheckRecoveryCmd.Flags().BoolVar(&polecatCheckRecoveryJSON, "json", false, "Output as JSON")
@@ -1148,7 +1152,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 			fmt.Printf("Nuking %s/%s...\n", p.rigName, p.polecatName)
 		}
 
-		if err := nukePolecatFull(p.polecatName, p.rigName, p.mgr, p.r); err != nil {
+		if err := nukePolecatFull(p.polecatName, p.rigName, p.mgr, p.r, polecatNukeVerify); err != nil {
 			nukeErrors = append(nukeErrors, fmt.Sprintf("%s/%s: %v", p.rigName, p.polecatName, err))
 			continue
 		}
@@ -1192,7 +1196,8 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 // 3. Delete git branch
 // 4. Close agent bead
 // This is the canonical cleanup path used by both `polecat nuke` and `polecat stale --cleanup`.
-func nukePolecatFull(polecatName, rigName string, mgr *polecat.Manager, r *rig.Rig) error {
+// If verify=true, performs a filesystem check after step 2 to confirm directories were removed.
+func nukePolecatFull(polecatName, rigName string, mgr *polecat.Manager, r *rig.Rig, verify bool) error {
 	t := tmux.NewTmux()
 
 	// Step 1: Kill tmux session unconditionally to prevent ghost sessions
@@ -1222,6 +1227,23 @@ func nukePolecatFull(polecatName, rigName string, mgr *polecat.Manager, r *rig.R
 		}
 	} else {
 		fmt.Printf("  %s deleted worktree\n", style.Success.Render("✓"))
+	}
+
+	// Step 3.1: Verify filesystem cleanup completeness (when --verify is set)
+	if verify {
+		polecatDir := filepath.Join(r.Path, "polecats", polecatName)
+		clonePath := filepath.Join(polecatDir, r.Name)
+		var verifyIssues []string
+		for _, p := range []string{clonePath, polecatDir} {
+			if _, err := os.Lstat(p); err == nil {
+				verifyIssues = append(verifyIssues, p)
+			}
+		}
+		if len(verifyIssues) > 0 {
+			fmt.Printf("  %s verify: directories still present: %v\n", style.Warning.Render("⚠"), verifyIssues)
+		} else {
+			fmt.Printf("  %s verify: filesystem clean\n", style.Success.Render("✓"))
+		}
 	}
 
 	// Step 3.5: Reject any open MRs for this branch before deleting it.
@@ -1405,7 +1427,7 @@ func runPolecatStale(cmd *cobra.Command, args []string) error {
 					continue
 				}
 				fmt.Printf("Nuking %s...\n", info.Name)
-				if err := nukePolecatFull(info.Name, rigName, mgr, r); err != nil {
+				if err := nukePolecatFull(info.Name, rigName, mgr, r, false); err != nil {
 					fmt.Printf("  %s (%v)\n", style.Error.Render("failed"), err)
 				} else {
 					nuked++

@@ -934,11 +934,15 @@ func (m *Manager) RemoveWithOptions(name string, force, nuclear, selfNuke bool) 
 // verifyRemovalComplete checks that polecat directories were actually removed.
 // If they still exist, it attempts more aggressive cleanup and returns an error
 // describing what couldn't be removed.
+//
+// Uses os.Lstat (not os.Stat) to check paths without following symlinks.
+// This correctly handles symlinks that point outside the worktree: we care
+// whether the path itself (symlink or dir) is gone, not whether the target exists.
 func verifyRemovalComplete(polecatDir, clonePath string) error {
 	var remaining []string
 
-	// Check if clone path still exists
-	if _, err := os.Stat(clonePath); err == nil {
+	// Check if clone path still exists (use Lstat to detect symlinks without following them)
+	if _, err := os.Lstat(clonePath); err == nil {
 		// Try one more aggressive removal
 		if removeErr := forceRemoveDir(clonePath); removeErr != nil {
 			remaining = append(remaining, clonePath)
@@ -947,7 +951,7 @@ func verifyRemovalComplete(polecatDir, clonePath string) error {
 
 	// Check if polecat dir still exists (and is different from clone path)
 	if polecatDir != clonePath {
-		if _, err := os.Stat(polecatDir); err == nil {
+		if _, err := os.Lstat(polecatDir); err == nil {
 			if removeErr := forceRemoveDir(polecatDir); removeErr != nil {
 				remaining = append(remaining, polecatDir)
 			}
