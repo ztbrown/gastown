@@ -292,7 +292,7 @@ func runWitnessStatus(cmd *cobra.Command, args []string) error {
 
 // witnessSessionName returns the tmux session name for a rig's witness.
 func witnessSessionName(rigName string) string {
-	return session.WitnessSessionName(session.PrefixFor(rigName))
+	return session.WitnessSessionName(rigName)
 }
 
 func runWitnessAttach(cmd *cobra.Command, args []string) error {

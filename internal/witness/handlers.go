@@ -619,8 +619,8 @@ Verified: clean git state`,
 // nudges would be stuck forever. Direct delivery is safe: if the
 // agent is busy, text buffers in tmux and is processed at next prompt.
 func nudgeRefinery(townRoot, rigName string) error {
-	initRegistryFromTownRoot(townRoot)
-	sessionName := session.RefinerySessionName(session.PrefixFor(rigName))
+	_ = session.InitRegistry(townRoot)
+	sessionName := session.RefinerySessionName(rigName)
 
 	// Check if refinery is running
 	t := tmux.NewTmux()

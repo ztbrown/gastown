@@ -700,8 +700,8 @@ func runRigList(cmd *cobra.Command, args []string) error {
 
 		opState, _ := getRigOperationalState(townRoot, name)
 
-		witnessSession := session.WitnessSessionName(session.PrefixFor(name))
-		refinerySession := session.RefinerySessionName(session.PrefixFor(name))
+		witnessSession := session.WitnessSessionName(name)
+		refinerySession := session.RefinerySessionName(name)
 		witnessRunning, _ := t.HasSession(witnessSession)
 		refineryRunning, _ := t.HasSession(refinerySession)
 
@@ -1324,7 +1324,7 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 
 	// 1. Start the witness
 	// Check actual tmux session, not state file (may be stale)
-	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
+	witnessSession := session.WitnessSessionName(rigName)
 	witnessRunning, _ := t.HasSession(witnessSession)
 	if witnessRunning {
 		skipped = append(skipped, "witness (already running)")
@@ -1344,7 +1344,7 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 
 	// 2. Start the refinery
 	// Check actual tmux session, not state file (may be stale)
-	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
+	refinerySession := session.RefinerySessionName(rigName)
 	refineryRunning, _ := t.HasSession(refinerySession)
 	if refineryRunning {
 		skipped = append(skipped, "refinery (already running)")
@@ -1413,7 +1413,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		hasError := false
 
 		// 1. Start the witness
-		witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
+		witnessSession := session.WitnessSessionName(rigName)
 		witnessRunning, _ := t.HasSession(witnessSession)
 		if witnessRunning {
 			skipped = append(skipped, "witness")
@@ -1433,7 +1433,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		}
 
 		// 2. Start the refinery
-		refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
+		refinerySession := session.RefinerySessionName(rigName)
 		refineryRunning, _ := t.HasSession(refinerySession)
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
@@ -1906,7 +1906,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		var skipped []string
 
 		// 1. Start the witness
-		witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
+		witnessSession := session.WitnessSessionName(rigName)
 		witnessRunning, _ := t.HasSession(witnessSession)
 		if witnessRunning {
 			skipped = append(skipped, "witness")
@@ -1925,7 +1925,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		}
 
 		// 2. Start the refinery
-		refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
+		refinerySession := session.RefinerySessionName(rigName)
 		refineryRunning, _ := t.HasSession(refinerySession)
 		if refineryRunning {
 			skipped = append(skipped, "refinery")

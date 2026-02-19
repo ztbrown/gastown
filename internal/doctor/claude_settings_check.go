@@ -302,14 +302,14 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 					path:        witnessCorrectSettings,
 					agentType:   "witness",
 					rigName:     rigName,
-					sessionName: session.WitnessSessionName(session.PrefixFor(rigName)),
+					sessionName: session.WitnessSessionName(rigName),
 				})
 			} else {
 				files = append(files, staleSettingsInfo{
 					path:        witnessCorrectSettings,
 					agentType:   "witness",
 					rigName:     rigName,
-					sessionName: session.WitnessSessionName(session.PrefixFor(rigName)),
+					sessionName: session.WitnessSessionName(rigName),
 					missingFile: true,
 				})
 			}
@@ -320,7 +320,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 					path:          witnessParentStaleLocal,
 					agentType:     "witness",
 					rigName:       rigName,
-					sessionName:   session.WitnessSessionName(session.PrefixFor(rigName)),
+					sessionName:   session.WitnessSessionName(rigName),
 					wrongLocation: true,
 					missing:       []string{"stale settings.local.json (settings now in witness/.claude/settings.json)"},
 				})
@@ -335,7 +335,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 							path:          stalePath,
 							agentType:     "witness",
 							rigName:       rigName,
-							sessionName:   session.WitnessSessionName(session.PrefixFor(rigName)),
+							sessionName:   session.WitnessSessionName(rigName),
 							wrongLocation: true,
 							missing:       []string{"stale settings in workdir (settings now in witness/.claude/settings.json)"},
 						})
@@ -354,14 +354,14 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 					path:        refineryCorrectSettings,
 					agentType:   "refinery",
 					rigName:     rigName,
-					sessionName: session.RefinerySessionName(session.PrefixFor(rigName)),
+					sessionName: session.RefinerySessionName(rigName),
 				})
 			} else {
 				files = append(files, staleSettingsInfo{
 					path:        refineryCorrectSettings,
 					agentType:   "refinery",
 					rigName:     rigName,
-					sessionName: session.RefinerySessionName(session.PrefixFor(rigName)),
+					sessionName: session.RefinerySessionName(rigName),
 					missingFile: true,
 				})
 			}
@@ -372,7 +372,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 					path:          refineryParentStaleLocal,
 					agentType:     "refinery",
 					rigName:       rigName,
-					sessionName:   session.RefinerySessionName(session.PrefixFor(rigName)),
+					sessionName:   session.RefinerySessionName(rigName),
 					wrongLocation: true,
 					missing:       []string{"stale settings.local.json (settings now in refinery/.claude/settings.json)"},
 				})
@@ -387,7 +387,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 							path:          stalePath,
 							agentType:     "refinery",
 							rigName:       rigName,
-							sessionName:   session.RefinerySessionName(session.PrefixFor(rigName)),
+							sessionName:   session.RefinerySessionName(rigName),
 							wrongLocation: true,
 							missing:       []string{"stale settings in workdir (settings now in refinery/.claude/settings.json)"},
 						})

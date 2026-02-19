@@ -24,15 +24,17 @@ func DeaconSessionName() string {
 }
 
 // WitnessSessionName returns the session name for a rig's Witness agent.
-// rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
-func WitnessSessionName(rigPrefix string) string {
-	return fmt.Sprintf("%s-witness", rigPrefix)
+// rigName is the rig name (e.g., "gastown", "untitled_golf_game").
+// All rig-level services use the DefaultPrefix "gt" regardless of rig-specific beads prefix.
+func WitnessSessionName(rigName string) string {
+	return fmt.Sprintf("%s-%s-witness", DefaultPrefix, rigName)
 }
 
 // RefinerySessionName returns the session name for a rig's Refinery agent.
-// rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
-func RefinerySessionName(rigPrefix string) string {
-	return fmt.Sprintf("%s-refinery", rigPrefix)
+// rigName is the rig name (e.g., "gastown", "untitled_golf_game").
+// All rig-level services use the DefaultPrefix "gt" regardless of rig-specific beads prefix.
+func RefinerySessionName(rigName string) string {
+	return fmt.Sprintf("%s-%s-refinery", DefaultPrefix, rigName)
 }
 
 // CrewSessionName returns the session name for a crew worker in a rig.
