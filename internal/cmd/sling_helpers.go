@@ -604,7 +604,7 @@ func wakeRigAgents(rigName string) {
 // nudges would be stuck forever. Direct delivery is safe: if the
 // agent is busy, text buffers in tmux and is processed at next prompt.
 func nudgeRefinery(rigName, message string) {
-	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
+	refinerySession := session.RefinerySessionName(rigName)
 
 	// Test hook: log nudge for test observability (same pattern as GT_TEST_ATTACHED_MOLECULE_LOG)
 	if logPath := os.Getenv("GT_TEST_NUDGE_LOG"); logPath != "" {

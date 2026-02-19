@@ -610,7 +610,7 @@ Verified: clean git state`,
 // agent is busy, text buffers in tmux and is processed at next prompt.
 func nudgeRefinery(townRoot, rigName string) error {
 	_ = session.InitRegistry(townRoot)
-	sessionName := session.RefinerySessionName(session.PrefixFor(rigName))
+	sessionName := session.RefinerySessionName(rigName)
 
 	// Check if refinery is running
 	t := tmux.NewTmux()

@@ -50,7 +50,7 @@ func TestDeriveSessionName(t *testing.T) {
 				"GT_ROLE": "witness",
 				"GT_RIG":  "gastown",
 			},
-			expected: "gt-witness",
+			expected: "gt-gastown-witness",
 		},
 		{
 			name: "refinery session",
@@ -58,7 +58,7 @@ func TestDeriveSessionName(t *testing.T) {
 				"GT_ROLE": "refinery",
 				"GT_RIG":  "gastown",
 			},
-			expected: "gt-refinery",
+			expected: "gt-gastown-refinery",
 		},
 		{
 			name: "mayor session",

@@ -1486,7 +1486,7 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 		defs = append(defs, agentDef{
 			name:    "refinery",
 			address: r.Name + "/refinery",
-			session: session.RefinerySessionName(session.PrefixFor(r.Name)),
+			session: session.RefinerySessionName(r.Name),
 			role:    "refinery",
 			beadID:  beads.RefineryBeadIDWithPrefix(prefix, r.Name),
 		})

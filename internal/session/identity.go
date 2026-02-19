@@ -143,6 +143,22 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 		return &AgentIdentity{Role: RoleRefinery, Rig: rig, Prefix: prefix}, nil
 	}
 
+	// Check for new-format witness/refinery: {rigName}-{role}
+	// e.g., "gt-gastown-witness" → prefix="gt", rest="gastown-witness"
+	// Scan known rigs to detect this pattern.
+	for rigName := range registry.AllRigs() {
+		rigPrefix := rigName + "-"
+		if strings.HasPrefix(rest, rigPrefix) {
+			roleSuffix := rest[len(rigPrefix):]
+			switch roleSuffix {
+			case "witness":
+				return &AgentIdentity{Role: RoleWitness, Rig: rigName, Prefix: prefix}, nil
+			case "refinery":
+				return &AgentIdentity{Role: RoleRefinery, Rig: rigName, Prefix: prefix}, nil
+			}
+		}
+	}
+
 	// Check for crew (marker in rest)
 	if strings.HasPrefix(rest, "crew-") {
 		name := rest[5:] // len("crew-") = 5
@@ -173,9 +189,9 @@ func (a *AgentIdentity) SessionName() string {
 	case RoleOverseer:
 		return OverseerSessionName()
 	case RoleWitness:
-		return WitnessSessionName(a.prefix())
+		return WitnessSessionName(a.Rig)
 	case RoleRefinery:
-		return RefinerySessionName(a.prefix())
+		return RefinerySessionName(a.Rig)
 	case RoleCrew:
 		return CrewSessionName(a.prefix(), a.Name)
 	case RolePolecat:

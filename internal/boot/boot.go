@@ -149,21 +149,13 @@ func (b *Boot) LoadStatus() (*Status, error) {
 	return &status, nil
 }
 
-// Spawn starts Boot in a fresh tmux session.
-// Boot runs the mol-boot-triage molecule and exits when done.
-// In degraded mode (no tmux), it runs in a subprocess.
-// The agentOverride parameter allows specifying an agent alias to use instead of the town default.
-// Boot is ephemeral - each spawn kills any existing session and starts fresh.
-func (b *Boot) Spawn(agentOverride string) error {
-	// No IsRunning() guard here - Boot is ephemeral by design.
-	// spawnTmux() kills any existing session before spawning fresh.
-
-	// Check for degraded mode
-	if b.degraded {
-		return b.spawnDegraded()
-	}
-
-	return b.spawnTmux(agentOverride)
+// Spawn starts Boot in degraded mode (mechanical triage only, no AI session).
+// Boot runs gt boot triage --degraded as a subprocess and exits when done.
+// This prevents AI sessions from running as boot dog — only the mechanical
+// Go triage logic executes, which is safer and avoids duplicate session spawning.
+// Boot is ephemeral - each spawn runs fresh.
+func (b *Boot) Spawn(_ string) error {
+	return b.spawnDegraded()
 }
 
 // spawnTmux spawns Boot in a tmux session.
