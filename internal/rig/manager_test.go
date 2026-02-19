@@ -3,6 +3,7 @@ package rig
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -232,6 +233,44 @@ func TestAddRig_RejectsInvalidNames(t *testing.T) {
 				t.Errorf("AddRig(%q) error = %q, want error containing %q", tt.name, err.Error(), tt.wantError)
 			}
 		})
+	}
+}
+
+func TestAddRig_EmptyRepo(t *testing.T) {
+	// Create an empty git repo (no commits, no branches)
+	emptyRepoDir := t.TempDir()
+	initCmds := [][]string{
+		{"git", "init", "--initial-branch=main", emptyRepoDir},
+		{"git", "-C", emptyRepoDir, "config", "user.email", "test@test.com"},
+		{"git", "-C", emptyRepoDir, "config", "user.name", "Test User"},
+	}
+	for _, args := range initCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args[1:], err, out)
+		}
+	}
+
+	root, rigsConfig := setupTestTown(t)
+	manager := NewManager(root, rigsConfig, git.NewGit(root))
+
+	_, err := manager.AddRig(AddRigOptions{
+		Name:   "emptyrig",
+		GitURL: emptyRepoDir,
+	})
+	if err == nil {
+		t.Fatal("AddRig should fail for a repo with no commits")
+	}
+	if !strings.Contains(err.Error(), "empty") {
+		t.Errorf("expected error message to mention empty repo, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "commit") {
+		t.Errorf("expected error message to mention commit, got: %v", err)
+	}
+	// Verify the rig directory was cleaned up
+	rigPath := filepath.Join(root, "emptyrig")
+	if _, statErr := os.Stat(rigPath); !os.IsNotExist(statErr) {
+		t.Errorf("expected rig directory %s to be cleaned up after error", rigPath)
 	}
 }
 
