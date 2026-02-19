@@ -42,6 +42,47 @@ func initTestRepo(t *testing.T) string {
 	return dir
 }
 
+func TestHasCommits(t *testing.T) {
+	t.Run("empty repo returns false", func(t *testing.T) {
+		dir := t.TempDir()
+		cmd := exec.Command("git", "init", dir)
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("git init: %v", err)
+		}
+		g := NewGit(dir)
+		if g.HasCommits() {
+			t.Fatal("expected HasCommits() = false for repo with no commits")
+		}
+	})
+
+	t.Run("repo with commits returns true", func(t *testing.T) {
+		dir := initTestRepo(t)
+		g := NewGit(dir)
+		if !g.HasCommits() {
+			t.Fatal("expected HasCommits() = true for repo with commits")
+		}
+	})
+
+	t.Run("bare empty repo returns false", func(t *testing.T) {
+		tmp := t.TempDir()
+		srcDir := filepath.Join(tmp, "src")
+		bareDir := filepath.Join(tmp, "bare.git")
+
+		cmd := exec.Command("git", "init", "--initial-branch=main", srcDir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v\n%s", err, out)
+		}
+		cmd = exec.Command("git", "clone", "--bare", srcDir, bareDir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git clone --bare: %v\n%s", err, out)
+		}
+		g := NewGitWithDir(bareDir, "")
+		if g.HasCommits() {
+			t.Fatal("expected HasCommits() = false for empty bare repo")
+		}
+	})
+}
+
 func TestIsRepo(t *testing.T) {
 	dir := t.TempDir()
 	g := NewGit(dir)

@@ -356,6 +356,18 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	fmt.Printf("   ✓ Created shared bare repo\n")
 	bareGit := git.NewGitWithDir(bareRepoPath, "")
 
+	// Detect empty repositories before attempting any git operations that require
+	// at least one commit (checkout, worktree add). An empty repo can't be fully
+	// set up as a rig - fail early with a clear, actionable error message.
+	if !bareGit.HasCommits() {
+		return nil, fmt.Errorf("repository %q is empty (no commits or branches).\n\n"+
+			"Gas Town requires at least one commit to set up a rig.\n"+
+			"Initialize the repository first:\n\n"+
+			"  git commit --allow-empty -m 'Initial commit'\n"+
+			"  git push\n\n"+
+			"Then retry: gt rig add %s %s", opts.GitURL, opts.Name, opts.GitURL)
+	}
+
 	// Determine default branch: use provided value or auto-detect from remote
 	var defaultBranch string
 	if opts.DefaultBranch != "" {
