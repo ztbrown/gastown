@@ -354,9 +354,7 @@ func buildRefineryPatrolVars(ctx RoleContext) []string {
 	if mq.LintCommand != "" {
 		vars = append(vars, fmt.Sprintf("lint_command=%s", mq.LintCommand))
 	}
-	if mq.TestCommand != "" {
-		vars = append(vars, fmt.Sprintf("test_command=%s", mq.TestCommand))
-	}
+	vars = append(vars, fmt.Sprintf("test_command=%s", mq.TestCommand))
 	if mq.BuildCommand != "" {
 		vars = append(vars, fmt.Sprintf("build_command=%s", mq.BuildCommand))
 	}

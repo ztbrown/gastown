@@ -229,7 +229,7 @@ func TestBuildRefineryPatrolVars_EmptyTestCommand(t *testing.T) {
 	mq := &config.MergeQueueConfig{
 		Enabled:              true,
 		RunTests:             &falseVal,
-		TestCommand:          "", // empty - should be omitted
+		TestCommand:          "", // empty - should be propagated to override formula default
 		DeleteMergedBranches: &trueVal2,
 	}
 	settings := config.RigSettings{
@@ -256,12 +256,14 @@ func TestBuildRefineryPatrolVars_EmptyTestCommand(t *testing.T) {
 		}
 	}
 
-	// test_command should not be present when empty
-	if _, ok := varMap["test_command"]; ok {
-		t.Error("test_command should be omitted when empty")
+	// test_command should be present even when empty, to override formula default
+	if got, ok := varMap["test_command"]; !ok {
+		t.Error("test_command should be present even when empty (to override formula default)")
+	} else if got != "" {
+		t.Errorf("test_command = %q, want %q", got, "")
 	}
 
-	// All command vars should be omitted when empty
+	// Other command vars should be omitted when empty
 	for _, cmd := range []string{"setup_command", "typecheck_command", "lint_command", "build_command"} {
 		if _, ok := varMap[cmd]; ok {
 			t.Errorf("%q should be omitted when empty", cmd)

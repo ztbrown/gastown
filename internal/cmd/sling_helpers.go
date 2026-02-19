@@ -830,7 +830,8 @@ func isSlingConfigError(err error) bool {
 
 // loadRigCommandVars reads rig settings and returns --var key=value strings
 // for all configured build pipeline commands (setup, typecheck, lint, test, build).
-// Only non-empty commands are included; empty means "skip" in the formula.
+// Only non-empty commands are included for optional commands; test_command is always
+// propagated so an empty string can explicitly override the formula default.
 func loadRigCommandVars(townRoot, rig string) []string {
 	if townRoot == "" || rig == "" {
 		return nil
@@ -851,9 +852,7 @@ func loadRigCommandVars(townRoot, rig string) []string {
 	if mq.LintCommand != "" {
 		vars = append(vars, fmt.Sprintf("lint_command=%s", mq.LintCommand))
 	}
-	if mq.TestCommand != "" {
-		vars = append(vars, fmt.Sprintf("test_command=%s", mq.TestCommand))
-	}
+	vars = append(vars, fmt.Sprintf("test_command=%s", mq.TestCommand))
 	if mq.BuildCommand != "" {
 		vars = append(vars, fmt.Sprintf("build_command=%s", mq.BuildCommand))
 	}
