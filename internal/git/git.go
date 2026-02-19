@@ -458,6 +458,13 @@ func (g *Git) CurrentBranch() (string, error) {
 	return g.run("rev-parse", "--abbrev-ref", "HEAD")
 }
 
+// HasCommits returns true if the repository has at least one commit.
+// Works for both bare and non-bare repositories.
+func (g *Git) HasCommits() bool {
+	out, err := g.run("rev-list", "--max-count=1", "--all")
+	return err == nil && strings.TrimSpace(out) != ""
+}
+
 // DefaultBranch returns the default branch name (what HEAD points to).
 // This works for both regular and bare repositories.
 // Returns "main" as fallback if detection fails.

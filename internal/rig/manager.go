@@ -362,22 +362,16 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	fmt.Printf("   ✓ Created shared bare repo\n")
 	bareGit := git.NewGitWithDir(bareRepoPath, "")
 
-	// Detect empty repos (no commits) early with a clear diagnostic.
-	// An empty repo has no refs, so RemoteDefaultBranch/DefaultBranch would
-	// return "main" as a fallback, but checkout would fail with an opaque error.
-	if empty, err := bareGit.IsEmpty(); err != nil {
-		return nil, fmt.Errorf("checking if repository is empty: %w", err)
-	} else if empty {
-		return nil, fmt.Errorf("repository %s is empty (no commits). Push at least one commit before adding it as a rig", opts.GitURL)
-	}
-
-	// Configure push URL if provided (for read-only upstream repos)
-	// This sets origin's push URL to the fork while keeping fetch URL as upstream
-	if opts.PushURL != "" {
-		if err := bareGit.ConfigurePushURL("origin", opts.PushURL); err != nil {
-			return nil, fmt.Errorf("configuring push URL: %w", err)
-		}
-		fmt.Printf("   ✓ Configured push URL (fork: %s)\n", util.RedactURL(opts.PushURL)) // fmt.Printf matches AddRig's established success output pattern
+	// Detect empty repositories before attempting any git operations that require
+	// at least one commit (checkout, worktree add). An empty repo can't be fully
+	// set up as a rig - fail early with a clear, actionable error message.
+	if !bareGit.HasCommits() {
+		return nil, fmt.Errorf("repository %q is empty (no commits or branches).\n\n"+
+			"Gas Town requires at least one commit to set up a rig.\n"+
+			"Initialize the repository first:\n\n"+
+			"  git commit --allow-empty -m 'Initial commit'\n"+
+			"  git push\n\n"+
+			"Then retry: gt rig add %s %s", opts.GitURL, opts.Name, opts.GitURL)
 	}
 
 	// Determine default branch: use provided value or auto-detect from remote
