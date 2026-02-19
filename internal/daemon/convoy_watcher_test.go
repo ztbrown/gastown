@@ -8,7 +8,7 @@ import (
 func TestConvoyWatcherStartStop(t *testing.T) {
 	// Verify the watcher starts and stops cleanly without errors.
 	// Uses a nonexistent binary so checkAll() fails but does not panic.
-	w := NewConvoyWatcher(t.TempDir(), func(format string, args ...interface{}) {}, "/nonexistent-gt", "/nonexistent-bd")
+	w := NewConvoyWatcher(t.TempDir(), func(format string, args ...interface{}) {}, "/nonexistent-gt")
 	if err := w.Start(); err != nil {
 		t.Fatalf("Start() returned error: %v", err)
 	}

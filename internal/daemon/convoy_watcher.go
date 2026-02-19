@@ -26,12 +26,11 @@ type ConvoyWatcher struct {
 
 	// PATCH-006: Resolved binary paths to avoid PATH issues in subprocesses.
 	gtPath string
-	bdPath string
 }
 
 // NewConvoyWatcher creates a new convoy watcher.
-// PATCH-006: Added gtPath and bdPath parameters.
-func NewConvoyWatcher(townRoot string, logger func(format string, args ...interface{}), gtPath, bdPath string) *ConvoyWatcher {
+// PATCH-006: Added gtPath parameter.
+func NewConvoyWatcher(townRoot string, logger func(format string, args ...interface{}), gtPath string) *ConvoyWatcher {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ConvoyWatcher{
 		townRoot: townRoot,
@@ -39,7 +38,6 @@ func NewConvoyWatcher(townRoot string, logger func(format string, args ...interf
 		cancel:   cancel,
 		logger:   logger,
 		gtPath:   gtPath,
-		bdPath:   bdPath,
 	}
 }
 
