@@ -2061,11 +2061,11 @@ func (h *APIHandler) handleSSE(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	var lastHash string
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	// Send keepalive comment every 15 seconds to prevent connection timeouts
-	keepalive := time.NewTicker(15 * time.Second)
+	// Send keepalive comment every 30 seconds to prevent connection timeouts
+	keepalive := time.NewTicker(30 * time.Second)
 	defer keepalive.Stop()
 
 	for {

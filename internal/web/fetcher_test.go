@@ -480,3 +480,26 @@ func TestNewDashboardMux_NilConfig(t *testing.T) {
 		t.Fatal("NewDashboardMux returned nil handler")
 	}
 }
+
+func TestFetcherSemaphoreLimits(t *testing.T) {
+	// Verify the semaphore exists and has the expected capacity.
+	if cap(fetcherSem) != maxFetcherCommands {
+		t.Fatalf("fetcherSem capacity = %d, want %d", cap(fetcherSem), maxFetcherCommands)
+	}
+
+	// Fill all slots.
+	for i := 0; i < maxFetcherCommands; i++ {
+		fetcherSem <- struct{}{}
+	}
+	// Verify no extra slots are available (non-blocking).
+	select {
+	case fetcherSem <- struct{}{}:
+		t.Fatal("semaphore allowed more than maxFetcherCommands concurrent slots")
+	default:
+		// Expected: channel is full.
+	}
+	// Drain.
+	for i := 0; i < maxFetcherCommands; i++ {
+		<-fetcherSem
+	}
+}

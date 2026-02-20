@@ -20,6 +20,28 @@ import (
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
+// maxFetcherCommands limits how many concurrent bd/gt subprocesses the fetcher
+// can spawn.  The dashboard handler fires 14 parallel Fetch* goroutines on every
+// page load, and each can cascade into multiple bd calls.  Without a cap this
+// creates 50+ concurrent processes (see #1760).
+const maxFetcherCommands = 6
+
+// fetcherSem is a package-level semaphore shared by all fetcher command helpers.
+// A buffered channel acts as a counting semaphore: send to acquire, receive to release.
+var fetcherSem = make(chan struct{}, maxFetcherCommands)
+
+// acquireFetcherSlot blocks until a command slot is available or ctx expires.
+func acquireFetcherSlot(ctx context.Context) error {
+	select {
+	case fetcherSem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("fetcher command slot unavailable: %w", ctx.Err())
+	}
+}
+
+func releaseFetcherSlot() { <-fetcherSem }
+
 // runCmd executes a command with a timeout and returns stdout.
 // Returns empty buffer on timeout or error.
 // Security: errors from this function are logged server-side only (via log.Printf
@@ -28,6 +50,11 @@ import (
 func runCmd(timeout time.Duration, name string, args ...string) (*bytes.Buffer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+
+	if err := acquireFetcherSlot(ctx); err != nil {
+		return nil, err
+	}
+	defer releaseFetcherSlot()
 
 	cmd := exec.CommandContext(ctx, name, args...)
 	var stdout bytes.Buffer
@@ -48,6 +75,11 @@ var fetcherRunCmd = runCmd
 func (f *LiveConvoyFetcher) runBdCmd(beadsDir string, args ...string) (*bytes.Buffer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), f.cmdTimeout)
 	defer cancel()
+
+	if err := acquireFetcherSlot(ctx); err != nil {
+		return nil, err
+	}
+	defer releaseFetcherSlot()
 
 	cmd := exec.CommandContext(ctx, "bd", args...)
 	cmd.Dir = beadsDir
