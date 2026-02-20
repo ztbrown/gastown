@@ -36,11 +36,19 @@ func TestBeadsBinaryCheck_BdInstalled(t *testing.T) {
 	ctx := &CheckContext{TownRoot: t.TempDir()}
 
 	result := check.Run(ctx)
-	if result.Status != StatusOK {
-		t.Errorf("expected StatusOK when bd is installed, got %v: %s", result.Status, result.Message)
-	}
-	if !strings.Contains(result.Message, "bd") {
-		t.Errorf("expected version string in message, got %q", result.Message)
+	// Non-hermetic: the installed bd may or may not meet MinBeadsVersion.
+	// We just verify it produces a meaningful result (not NotFound/Unknown).
+	switch result.Status {
+	case StatusOK:
+		if !strings.Contains(result.Message, "bd") {
+			t.Errorf("expected version string in message, got %q", result.Message)
+		}
+	case StatusError:
+		if !strings.Contains(result.Message, "too old") {
+			t.Errorf("expected 'too old' in error message, got %q", result.Message)
+		}
+	default:
+		t.Errorf("unexpected status %v when bd is installed: %s", result.Status, result.Message)
 	}
 }
 
