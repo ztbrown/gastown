@@ -604,9 +604,10 @@ Verified: clean git state`,
 }
 
 // nudgeRefinery wakes the refinery session to check its inbox.
-// Uses idle-aware delivery: if the refinery is idle (waiting between patrol
-// cycles), delivers directly via tmux; if busy, queues for next turn boundary.
-// This ensures idle refineries wake up immediately for pending merge requests.
+// Uses immediate delivery: sends directly to the tmux pane.
+// No cooperative queue — idle agents never call Drain(), so queued
+// nudges would be stuck forever. Direct delivery is safe: if the
+// agent is busy, text buffers in tmux and is processed at next prompt.
 func nudgeRefinery(townRoot, rigName string) error {
 	_ = session.InitRegistry(townRoot)
 	sessionName := session.RefinerySessionName(session.PrefixFor(rigName))

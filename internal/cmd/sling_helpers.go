@@ -573,7 +573,9 @@ func wakeRigAgents(rigName string) {
 	// agent is busy, text buffers in tmux and is processed at next prompt.
 	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
 	t := tmux.NewTmux()
-	_ = t.NudgeSession(witnessSession, "Polecat dispatched - check for work")
+	if err := t.NudgeSession(witnessSession, "Polecat dispatched - check for work"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to nudge witness %s: %v\n", witnessSession, err)
+	}
 }
 
 // nudgeRefinery wakes the refinery after an MR is created.
@@ -596,7 +598,9 @@ func nudgeRefinery(rigName, message string) {
 	}
 
 	t := tmux.NewTmux()
-	_ = t.NudgeSession(refinerySession, message)
+	if err := t.NudgeSession(refinerySession, message); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to nudge refinery %s: %v\n", refinerySession, err)
+	}
 }
 
 // isPolecatTarget checks if the target string refers to a polecat.
