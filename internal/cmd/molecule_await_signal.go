@@ -79,23 +79,40 @@ type AwaitSignalResult struct {
 	IdleCycles int           `json:"idle_cycles,omitempty"` // current idle cycle count (after update)
 }
 
+// awaitSignalCmd is the top-level alias for 'gt await-signal', identical to
+// 'gt mol step await-signal'. Witnesses frequently call this shorter form;
+// this command prevents the crash-loop caused by "unknown command" errors.
+var awaitSignalCmd = &cobra.Command{
+	Use:     "await-signal",
+	Short:   moleculeAwaitSignalCmd.Short,
+	Long:    moleculeAwaitSignalCmd.Long,
+	GroupID: GroupWork,
+	RunE:    runMoleculeAwaitSignal,
+}
+
 func init() {
-	moleculeAwaitSignalCmd.Flags().StringVar(&awaitSignalTimeout, "timeout", "60s",
-		"Maximum time to wait for signal (e.g., 30s, 5m)")
-	moleculeAwaitSignalCmd.Flags().StringVar(&awaitSignalBackoffBase, "backoff-base", "",
-		"Base interval for exponential backoff (e.g., 30s)")
-	moleculeAwaitSignalCmd.Flags().IntVar(&awaitSignalBackoffMult, "backoff-mult", 2,
-		"Multiplier for exponential backoff (default: 2)")
-	moleculeAwaitSignalCmd.Flags().StringVar(&awaitSignalBackoffMax, "backoff-max", "",
-		"Maximum interval cap for backoff (e.g., 10m)")
-	moleculeAwaitSignalCmd.Flags().StringVar(&awaitSignalAgentBead, "agent-bead", "",
-		"Agent bead ID for tracking idle cycles (reads/writes idle:N label)")
-	moleculeAwaitSignalCmd.Flags().BoolVar(&awaitSignalQuiet, "quiet", false,
-		"Suppress output (for scripting)")
-	moleculeAwaitSignalCmd.Flags().BoolVar(&moleculeJSON, "json", false,
-		"Output as JSON")
+	registerAwaitSignalFlags(moleculeAwaitSignalCmd)
+	registerAwaitSignalFlags(awaitSignalCmd)
 
 	moleculeStepCmd.AddCommand(moleculeAwaitSignalCmd)
+	rootCmd.AddCommand(awaitSignalCmd)
+}
+
+func registerAwaitSignalFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&awaitSignalTimeout, "timeout", "60s",
+		"Maximum time to wait for signal (e.g., 30s, 5m)")
+	cmd.Flags().StringVar(&awaitSignalBackoffBase, "backoff-base", "",
+		"Base interval for exponential backoff (e.g., 30s)")
+	cmd.Flags().IntVar(&awaitSignalBackoffMult, "backoff-mult", 2,
+		"Multiplier for exponential backoff (default: 2)")
+	cmd.Flags().StringVar(&awaitSignalBackoffMax, "backoff-max", "",
+		"Maximum interval cap for backoff (e.g., 10m)")
+	cmd.Flags().StringVar(&awaitSignalAgentBead, "agent-bead", "",
+		"Agent bead ID for tracking idle cycles (reads/writes idle:N label)")
+	cmd.Flags().BoolVar(&awaitSignalQuiet, "quiet", false,
+		"Suppress output (for scripting)")
+	cmd.Flags().BoolVar(&moleculeJSON, "json", false,
+		"Output as JSON")
 }
 
 func runMoleculeAwaitSignal(cmd *cobra.Command, args []string) error {
