@@ -500,6 +500,13 @@ func (d *Daemon) heartbeat(state *State) {
 	// branches persist indefinitely. This cleans them up periodically.
 	d.pruneStaleBranches()
 
+	// 17. Run mechanical patrol steps (deacon patrol steps extracted to Go).
+	// These replace equivalent LLM patrol steps with direct Go implementations:
+	// orphan cleanup (replaces former step 13), gate evaluation, dog pool,
+	// wisp TTL, session GC, log rotation, convoy feeding, idle town detection,
+	// and mail archiving.
+	d.runMechanicalPatrol()
+
 	// Update state
 	state.LastHeartbeat = time.Now()
 	state.HeartbeatCount++
