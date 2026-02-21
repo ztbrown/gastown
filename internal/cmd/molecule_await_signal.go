@@ -73,10 +73,43 @@ EXAMPLES:
 
 // AwaitSignalResult is the result of an await-signal operation.
 type AwaitSignalResult struct {
-	Reason     string        `json:"reason"`               // "signal" or "timeout"
-	Elapsed    time.Duration `json:"elapsed"`              // how long we waited
-	Signal     string        `json:"signal,omitempty"`     // the line that woke us (if signal)
-	IdleCycles int           `json:"idle_cycles,omitempty"` // current idle cycle count (after update)
+	Reason           string        `json:"reason"`                     // "signal" or "timeout"
+	Elapsed          time.Duration `json:"elapsed"`                    // how long we waited
+	Signal           string        `json:"signal,omitempty"`           // the line that woke us (if signal)
+	IdleCycles       int           `json:"idle_cycles,omitempty"`      // current idle cycle count (after update)
+	BudgetZone       string        `json:"budget_zone,omitempty"`      // budget zone (e.g. "yellow", "red")
+	BudgetMultiplier float64       `json:"budget_multiplier,omitempty"` // effective throttle multiplier
+}
+
+// BudgetThrottle contains budget zone and throttle multiplier from the comptroller.
+type BudgetThrottle struct {
+	Zone       string    `json:"zone"`
+	Multiplier float64   `json:"multiplier"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// readBudgetThrottle reads ~/gt/.budget-throttle.json and returns the current
+// budget throttle configuration. Returns nil if the file is missing, unreadable,
+// or more than 24 hours stale. Multiplier is clamped to >= 1.0.
+func readBudgetThrottle(townRoot string) *BudgetThrottle {
+	path := filepath.Join(townRoot, ".budget-throttle.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil // missing or unreadable — graceful degradation
+	}
+	var bt BudgetThrottle
+	if err := json.Unmarshal(data, &bt); err != nil {
+		return nil
+	}
+	// Ignore stale throttle data (>24h old)
+	if time.Since(bt.UpdatedAt) > 24*time.Hour {
+		return nil
+	}
+	// Clamp multiplier to minimum of 1.0
+	if bt.Multiplier < 1.0 {
+		bt.Multiplier = 1.0
+	}
+	return &bt
 }
 
 func init() {
@@ -268,9 +301,17 @@ func runMoleculeAwaitSignal(cmd *cobra.Command, args []string) error {
 
 // calculateEffectiveTimeout determines the timeout based on flags.
 // If backoff parameters are provided, uses exponential backoff formula:
-//   min(base * multiplier^idleCycles, max)
+//
+//	min(base * multiplier^idleCycles, max)
+//
 // Otherwise uses the simple --timeout value.
-func calculateEffectiveTimeout(idleCycles int) (time.Duration, error) {
+// budgetMultiplier scales both the computed timeout and the backoff-max cap.
+// Values < 1.0 are treated as 1.0 (no speedup).
+func calculateEffectiveTimeout(idleCycles int, budgetMultiplier float64) (time.Duration, error) {
+	if budgetMultiplier < 1.0 {
+		budgetMultiplier = 1.0
+	}
+
 	// If backoff base is set, use backoff mode
 	if awaitSignalBackoffBase != "" {
 		base, err := time.ParseDuration(awaitSignalBackoffBase)
@@ -284,12 +325,16 @@ func calculateEffectiveTimeout(idleCycles int) (time.Duration, error) {
 			timeout *= time.Duration(awaitSignalBackoffMult)
 		}
 
-		// Apply max cap if specified
+		// Apply budget multiplier to both timeout and max cap
+		timeout = time.Duration(float64(timeout) * budgetMultiplier)
+
+		// Apply max cap if specified (also scaled by budget multiplier)
 		if awaitSignalBackoffMax != "" {
 			maxDur, err := time.ParseDuration(awaitSignalBackoffMax)
 			if err != nil {
 				return 0, fmt.Errorf("invalid backoff-max: %w", err)
 			}
+			maxDur = time.Duration(float64(maxDur) * budgetMultiplier)
 			if timeout > maxDur {
 				timeout = maxDur
 			}
@@ -298,8 +343,12 @@ func calculateEffectiveTimeout(idleCycles int) (time.Duration, error) {
 		return timeout, nil
 	}
 
-	// Simple timeout mode
-	return time.ParseDuration(awaitSignalTimeout)
+	// Simple timeout mode — apply budget multiplier
+	baseDur, err := time.ParseDuration(awaitSignalTimeout)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(float64(baseDur) * budgetMultiplier), nil
 }
 
 // waitForActivitySignal tails the events file for new activity.
