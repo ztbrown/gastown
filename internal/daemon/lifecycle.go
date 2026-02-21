@@ -715,13 +715,14 @@ func (d *Daemon) closeMessage(id string) error {
 
 // AgentBeadInfo represents the parsed fields from an agent bead.
 type AgentBeadInfo struct {
-	ID         string `json:"id"`
-	Type       string `json:"issue_type"`
-	State      string // From DB column (agent_state), fallback to description
-	HookBead   string // From DB column (hook_bead)
-	RoleType   string // Parsed from description: role_type
-	Rig        string // Parsed from description: rig
-	LastUpdate string `json:"updated_at"`
+	ID            string `json:"id"`
+	Type          string `json:"issue_type"`
+	State         string // From DB column (agent_state), fallback to description
+	HookBead      string // From DB column (hook_bead)
+	RoleType      string // Parsed from description: role_type
+	Rig           string // Parsed from description: rig
+	CleanupStatus string // Parsed from description: cleanup_status (clean, has_uncommitted, has_stash, has_unpushed)
+	LastUpdate    string `json:"updated_at"`
 	// Note: RoleBead field removed - role definitions are now config-based
 }
 
@@ -792,6 +793,7 @@ func (d *Daemon) getAgentBeadInfo(agentBeadID string) (*AgentBeadInfo, error) {
 	if fields != nil {
 		info.RoleType = fields.RoleType
 		info.Rig = fields.Rig
+		info.CleanupStatus = fields.CleanupStatus
 	}
 
 	// Use AgentState from database column directly (not from description).
@@ -975,6 +977,24 @@ func (d *Daemon) checkRigGUPPViolations(rigName string) {
 
 				// Notify the witness for this rig
 				d.notifyWitnessOfGUPP(rigName, agent.ID, agent.HookBead, age)
+
+				// Track consecutive health failures and escalate to Mayor at threshold
+				if d.healthTracker != nil && d.escalator != nil {
+					failCount := d.healthTracker.Record(agent.ID)
+					if failCount >= healthEscalationThreshold {
+						d.escalator.EscalateToMayor(EscalationContext{
+							Kind:         KindHealthFailures,
+							Priority:     "high",
+							Rig:          rigName,
+							Polecat:      polecatName,
+							BeadID:       agent.HookBead,
+							FailureCount: failCount,
+						})
+					}
+				}
+			} else if d.healthTracker != nil {
+				// Agent is progressing normally - reset failure counter
+				d.healthTracker.Reset(agent.ID)
 			}
 		}
 	}
