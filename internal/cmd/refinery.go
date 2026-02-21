@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/refinery"
-	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -265,6 +266,7 @@ func init() {
 	refineryCmd.AddCommand(refineryUnclaimedCmd)
 	refineryCmd.AddCommand(refineryReadyCmd)
 	refineryCmd.AddCommand(refineryBlockedCmd)
+	refineryCmd.AddCommand(refineryDaemonCmd)
 
 	rootCmd.AddCommand(refineryCmd)
 }
@@ -856,4 +858,38 @@ func runRefineryBlocked(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+var refineryDaemonCmd = &cobra.Command{
+	Use:    "daemon [rig]",
+	Hidden: true, // Internal: launched by Manager.Start(), not for direct human use
+	Short:  "Run the refinery Go daemon (foreground)",
+	Long: `Run the refinery merge pipeline daemon in the foreground.
+
+This is the Go-native replacement for the LLM refinery agent.
+It subscribes to the refinery inbox for MERGE_READY signals and
+processes merge requests deterministically using the Engineer pipeline.
+
+Normally launched automatically by 'gt refinery start' or the gt daemon.
+If rig is not specified, infers from the current directory.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runRefineryDaemon,
+}
+
+func runRefineryDaemon(cmd *cobra.Command, args []string) error {
+	rigName := ""
+	if len(args) > 0 {
+		rigName = args[0]
+	}
+
+	_, r, _, err := getRefineryManager(rigName)
+	if err != nil {
+		return err
+	}
+
+	daemon := refinery.NewGoDaemon(r)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	return daemon.Run(ctx)
 }

@@ -862,10 +862,23 @@ func (d *Daemon) killWitnessSessions() {
 // Called when the refinery patrol is disabled. (hq-2mstj)
 func (d *Daemon) killRefinerySessions() {
 	for _, rigName := range d.getKnownRigs() {
+		rigPath := filepath.Join(d.config.TownRoot, rigName)
+
+		// Stop Go daemon if running
+		running, pid, _ := refinery.IsRefineryDaemonRunning(rigPath)
+		if running && pid > 0 {
+			d.logger.Printf("Stopping Go refinery daemon for %s (PID %d, patrol disabled)", rigName, pid)
+			proc, err := os.FindProcess(pid)
+			if err == nil {
+				_ = proc.Signal(syscall.SIGTERM)
+			}
+		}
+
+		// Also kill legacy tmux session if present
 		name := session.RefinerySessionName(rigName)
 		exists, _ := d.tmux.HasSession(name)
 		if exists {
-			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
+			d.logger.Printf("Killing leftover %s tmux session (patrol disabled)", name)
 			if err := d.tmux.KillSessionWithProcesses(name); err != nil {
 				d.logger.Printf("Error killing %s session: %v", name, err)
 			}

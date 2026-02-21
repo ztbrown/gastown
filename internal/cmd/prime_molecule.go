@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"github.com/steveyegge/gastown/internal/cli"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/beads"
-	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/deacon"
-	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
@@ -124,9 +121,8 @@ func outputMoleculeContext(ctx RoleContext) {
 		return
 	}
 
-	// For Refinery, use special patrol molecule handling (auto-bonds on startup)
+	// Refinery is now a Go daemon — no patrol molecule needed.
 	if ctx.Role == RoleRefinery {
-		outputRefineryPatrolContext(ctx)
 		return
 	}
 
@@ -289,77 +285,3 @@ func outputWitnessPatrolContext(ctx RoleContext) {
 	outputPatrolContext(cfg)
 }
 
-// outputRefineryPatrolContext shows patrol molecule status for the Refinery.
-// Refinery AUTO-BONDS its patrol molecule on startup if one isn't already running.
-func outputRefineryPatrolContext(ctx RoleContext) {
-	cfg := PatrolConfig{
-		RoleName:        "refinery",
-		PatrolMolName:   "mol-refinery-patrol",
-		BeadsDir:        ctx.WorkDir,
-		Assignee:        ctx.Rig + "/refinery",
-		HeaderEmoji:     "🔧",
-		HeaderTitle:     "Refinery Patrol Status",
-		CheckInProgress: true,
-		ExtraVars:       buildRefineryPatrolVars(ctx),
-		WorkLoopSteps: []string{
-			"Check inbox: `" + cli.Name() + " mail inbox`",
-			"Check next step: `bd mol current`",
-			"Execute the step (queue scan, process branch, tests, merge)",
-			"Close step: `bd close <step-id>`",
-			"Check next: `bd mol current`",
-			"At cycle end (loop-or-exit step):\n   - If context LOW:\n     * Squash: `bd mol squash <mol-id> --summary \"<summary>\"`\n     * Create new patrol: `" + cli.Name() + " patrol new`\n     * Continue executing from inbox-check step\n   - If context HIGH:\n     * Send handoff: `" + cli.Name() + " handoff -s \"Refinery patrol\" -m \"<observations>\"`\n     * Exit cleanly (daemon respawns fresh session)",
-		},
-	}
-	outputPatrolContext(cfg)
-}
-
-// buildRefineryPatrolVars loads rig MQ settings and returns --var key=value
-// strings for the refinery patrol formula.
-func buildRefineryPatrolVars(ctx RoleContext) []string {
-	var vars []string
-	if ctx.TownRoot == "" || ctx.Rig == "" {
-		return vars
-	}
-	rigPath := filepath.Join(ctx.TownRoot, ctx.Rig)
-
-	// Always inject target_branch from rig config — this is independent of
-	// merge queue settings and must not be gated behind MQ existence.
-	// Without this, rigs with no settings/config.json or no merge_queue
-	// section get the formula default ("main") instead of their configured
-	// default_branch.
-	defaultBranch := "main"
-	rigCfg, err := rig.LoadRigConfig(rigPath)
-	if err == nil && rigCfg.DefaultBranch != "" {
-		defaultBranch = rigCfg.DefaultBranch
-	}
-	vars = append(vars, fmt.Sprintf("target_branch=%s", defaultBranch))
-
-	// MQ-specific vars require settings/config.json with a merge_queue section
-	settingsPath := filepath.Join(rigPath, "settings", "config.json")
-	settings, sErr := config.LoadRigSettings(settingsPath)
-	if sErr != nil || settings == nil || settings.MergeQueue == nil {
-		return vars
-	}
-	mq := settings.MergeQueue
-
-	vars = append(vars, fmt.Sprintf("integration_branch_refinery_enabled=%t", mq.IsRefineryIntegrationEnabled()))
-	vars = append(vars, fmt.Sprintf("integration_branch_auto_land=%t", mq.IsIntegrationBranchAutoLandEnabled()))
-	vars = append(vars, fmt.Sprintf("run_tests=%t", mq.IsRunTestsEnabled()))
-	if mq.SetupCommand != "" {
-		vars = append(vars, fmt.Sprintf("setup_command=%s", mq.SetupCommand))
-	}
-	if mq.TypecheckCommand != "" {
-		vars = append(vars, fmt.Sprintf("typecheck_command=%s", mq.TypecheckCommand))
-	}
-	if mq.LintCommand != "" {
-		vars = append(vars, fmt.Sprintf("lint_command=%s", mq.LintCommand))
-	}
-	if mq.TestCommand != "" {
-		vars = append(vars, fmt.Sprintf("test_command=%s", mq.TestCommand))
-	}
-	if mq.BuildCommand != "" {
-		vars = append(vars, fmt.Sprintf("build_command=%s", mq.BuildCommand))
-	}
-	vars = append(vars, fmt.Sprintf("delete_merged_branches=%t", mq.IsDeleteMergedBranchesEnabled()))
-	return vars
-}
