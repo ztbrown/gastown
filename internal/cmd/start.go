@@ -16,7 +16,6 @@ import (
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/daemon"
-	"github.com/steveyegge/gastown/internal/deacon"
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mayor"
@@ -26,7 +25,6 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
-	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -59,13 +57,13 @@ var startCmd = &cobra.Command{
 	Use:     "start [path]",
 	GroupID: GroupServices,
 	Short:   "Start Gas Town or a crew workspace",
-	Long: `Start Gas Town by launching the Deacon and Mayor.
+	Long: `Start Gas Town by launching the Mayor and Go daemon.
 
-The Deacon is the health-check orchestrator that monitors Mayor and Witnesses.
 The Mayor is the global coordinator that dispatches work.
+The Go daemon handles witness, deacon, and refinery patrol automatically.
 
-By default, other agents (Witnesses, Refineries) are started lazily as needed.
-Use --all to start Witnesses and Refineries for all registered rigs immediately.
+By default, Refineries are started lazily as needed.
+Use --all to start Refineries for all registered rigs immediately.
 
 Crew shortcut:
   If a path like "rig/crew/name" is provided, starts that crew workspace.
@@ -296,93 +294,42 @@ func runStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s Gas Town is running\n", style.Bold.Render("✓"))
 	fmt.Println()
 	fmt.Printf("  Attach to Mayor:  %s\n", style.Dim.Render("gt mayor attach"))
-	fmt.Printf("  Attach to Deacon: %s\n", style.Dim.Render("gt deacon attach"))
 	fmt.Printf("  Check status:     %s\n", style.Dim.Render("gt status"))
 
 	return nil
 }
 
-// startCoreAgents starts Mayor and Deacon sessions in parallel using the Manager pattern.
+// startCoreAgents starts the Mayor session using the Manager pattern.
 // The mutex is used to synchronize output with other parallel startup operations.
 func startCoreAgents(townRoot string, agentOverride string, mu *sync.Mutex) error {
-	var wg sync.WaitGroup
-	var firstErr error
-	var errMu sync.Mutex
-
-	// Start Mayor in goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		mayorMgr := mayor.NewManager(townRoot)
-		if err := mayorMgr.Start(agentOverride); err != nil {
-			if errors.Is(err, mayor.ErrAlreadyRunning) {
-				mu.Lock()
-				fmt.Printf("  %s Mayor already running\n", style.Dim.Render("○"))
-				mu.Unlock()
-			} else {
-				errMu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("starting Mayor: %w", err)
-				}
-				errMu.Unlock()
-				mu.Lock()
-				fmt.Printf("  %s Mayor failed: %v\n", style.Dim.Render("○"), err)
-				mu.Unlock()
-			}
+	mayorMgr := mayor.NewManager(townRoot)
+	if err := mayorMgr.Start(agentOverride); err != nil {
+		if errors.Is(err, mayor.ErrAlreadyRunning) {
+			mu.Lock()
+			fmt.Printf("  %s Mayor already running\n", style.Dim.Render("○"))
+			mu.Unlock()
 		} else {
 			mu.Lock()
-			fmt.Printf("  %s Mayor started\n", style.Bold.Render("✓"))
+			fmt.Printf("  %s Mayor failed: %v\n", style.Dim.Render("○"), err)
 			mu.Unlock()
+			return fmt.Errorf("starting Mayor: %w", err)
 		}
-	}()
-
-	// Start Deacon in goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		deaconMgr := deacon.NewManager(townRoot)
-		if err := deaconMgr.Start(agentOverride); err != nil {
-			if errors.Is(err, deacon.ErrAlreadyRunning) {
-				mu.Lock()
-				fmt.Printf("  %s Deacon already running\n", style.Dim.Render("○"))
-				mu.Unlock()
-			} else {
-				errMu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("starting Deacon: %w", err)
-				}
-				errMu.Unlock()
-				mu.Lock()
-				fmt.Printf("  %s Deacon failed: %v\n", style.Dim.Render("○"), err)
-				mu.Unlock()
-			}
-		} else {
-			mu.Lock()
-			fmt.Printf("  %s Deacon started\n", style.Bold.Render("✓"))
-			mu.Unlock()
-		}
-	}()
-
-	wg.Wait()
-	return firstErr
+	} else {
+		mu.Lock()
+		fmt.Printf("  %s Mayor started\n", style.Bold.Render("✓"))
+		mu.Unlock()
+	}
+	return nil
 }
 
-// startRigAgents starts witness and refinery for all rigs in parallel.
+// startRigAgents starts the refinery for all rigs in parallel.
 // Called when --all flag is passed to gt start.
+// Note: Witness is now managed by the Go daemon directly.
 func startRigAgents(rigs []*rig.Rig, mu *sync.Mutex) {
 	var wg sync.WaitGroup
 
 	for _, r := range rigs {
-		wg.Add(2) // Witness + Refinery
-
-		// Start Witness in goroutine
-		go func(r *rig.Rig) {
-			defer wg.Done()
-			msg := startWitnessForRig(r)
-			mu.Lock()
-			fmt.Print(msg)
-			mu.Unlock()
-		}(r)
+		wg.Add(1)
 
 		// Start Refinery in goroutine
 		go func(r *rig.Rig) {
@@ -395,18 +342,6 @@ func startRigAgents(rigs []*rig.Rig, mu *sync.Mutex) {
 	}
 
 	wg.Wait()
-}
-
-// startWitnessForRig starts the witness for a single rig and returns a status message.
-func startWitnessForRig(r *rig.Rig) string {
-	witMgr := witness.NewManager(r)
-	if err := witMgr.Start(false, "", nil); err != nil {
-		if errors.Is(err, witness.ErrAlreadyRunning) {
-			return fmt.Sprintf("  %s %s witness already running\n", style.Dim.Render("○"), r.Name)
-		}
-		return fmt.Sprintf("  %s %s witness failed: %v\n", style.Dim.Render("○"), r.Name, err)
-	}
-	return fmt.Sprintf("  %s %s witness started\n", style.Bold.Render("✓"), r.Name)
 }
 
 // startRefineryForRig starts the refinery for a single rig and returns a status message.

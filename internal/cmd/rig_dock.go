@@ -15,7 +15,6 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
-	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -28,7 +27,6 @@ var rigDockCmd = &cobra.Command{
 	Long: `Dock a rig to persistently disable it across all clones.
 
 Docking a rig:
-  - Stops the witness if running
   - Stops the refinery if running
   - Stops all polecat sessions if running
   - Sets status:docked label on the rig identity bead
@@ -122,19 +120,6 @@ func runRigDock(cmd *cobra.Command, args []string) error {
 	var stoppedAgents []string
 
 	t := tmux.NewTmux()
-
-	// Stop witness if running
-	witnessSession := session.WitnessSessionName(rigName)
-	witnessRunning, _ := t.HasSession(witnessSession)
-	if witnessRunning {
-		fmt.Printf("  Stopping witness...\n")
-		witMgr := witness.NewManager(r)
-		if err := witMgr.Stop(); err != nil {
-			fmt.Printf("  %s Failed to stop witness: %v\n", style.Warning.Render("!"), err)
-		} else {
-			stoppedAgents = append(stoppedAgents, "Witness stopped")
-		}
-	}
 
 	// Stop refinery if running
 	refinerySession := session.RefinerySessionName(rigName)

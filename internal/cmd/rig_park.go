@@ -9,7 +9,6 @@ import (
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/wisp"
-	"github.com/steveyegge/gastown/internal/witness"
 )
 
 // RigStatusKey is the wisp config key for rig operational status.
@@ -24,7 +23,6 @@ var rigParkCmd = &cobra.Command{
 	Long: `Park rigs to temporarily disable them.
 
 Parking a rig:
-  - Stops the witness if running
   - Stops the refinery if running
   - Sets status=parked in the wisp layer (local/ephemeral)
   - The daemon respects this status and won't auto-restart agents
@@ -94,19 +92,6 @@ func parkOneRig(rigName string) error {
 	var stoppedAgents []string
 
 	t := tmux.NewTmux()
-
-	// Stop witness if running
-	witnessSession := session.WitnessSessionName(rigName)
-	witnessRunning, _ := t.HasSession(witnessSession)
-	if witnessRunning {
-		fmt.Printf("  Stopping witness...\n")
-		witMgr := witness.NewManager(r)
-		if err := witMgr.Stop(); err != nil {
-			fmt.Printf("  %s Failed to stop witness: %v\n", style.Warning.Render("!"), err)
-		} else {
-			stoppedAgents = append(stoppedAgents, "Witness stopped")
-		}
-	}
 
 	// Stop refinery if running
 	refinerySession := session.RefinerySessionName(rigName)
