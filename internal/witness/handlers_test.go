@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -1246,6 +1247,122 @@ esac
 	}
 	if !strings.Contains(logContent, "update gt-work-001") {
 		t.Errorf("expected bd update for bead reset, got log:\n%s", logContent)
+	}
+}
+
+// TestRecyclePolecatSession_NoSession verifies that recycling a non-existent
+// session succeeds without error (idempotent - session is already gone).
+func TestRecyclePolecatSession_NoSession(t *testing.T) {
+	// Non-existent session should return nil (nothing to kill)
+	err := RecyclePolecatSession("/nonexistent", "testrig", "nonexistent-polecat-xyz")
+	// tmux.HasSession on a missing session returns false, nil
+	// so RecyclePolecatSession should succeed with no error
+	if err != nil {
+		t.Errorf("RecyclePolecatSession returned unexpected error: %v", err)
+	}
+}
+
+// TestHandlePolecatDone_PhaseComplete verifies that PHASE_COMPLETE exits
+// attempt to recycle the polecat session.
+func TestHandlePolecatDone_PhaseComplete(t *testing.T) {
+	msg := &mail.Message{
+		ID:      "mail-phase-complete",
+		Subject: "POLECAT_DONE nux",
+		Body: `Exit: PHASE_COMPLETE
+Issue: gt-abc
+Gate: gt-gate-123
+Branch: polecat/nux/gt-abc`,
+	}
+
+	result := HandlePolecatDone("/nonexistent", "testrig", msg, nil)
+
+	if !result.Handled {
+		t.Error("HandlePolecatDone PHASE_COMPLETE: Handled should be true")
+	}
+	if result.Error != nil {
+		// Non-existent session should not cause error (RecyclePolecatSession is idempotent)
+		t.Errorf("HandlePolecatDone PHASE_COMPLETE: unexpected error: %v", result.Error)
+	}
+	if !strings.Contains(result.Action, "phase-complete") {
+		t.Errorf("HandlePolecatDone PHASE_COMPLETE: expected 'phase-complete' in action, got: %s", result.Action)
+	}
+	if !strings.Contains(result.Action, "session recycled") {
+		t.Errorf("HandlePolecatDone PHASE_COMPLETE: expected 'session recycled' in action, got: %s", result.Action)
+	}
+	if !strings.Contains(result.Action, "worktree preserved") {
+		t.Errorf("HandlePolecatDone PHASE_COMPLETE: expected 'worktree preserved' in action, got: %s", result.Action)
+	}
+}
+
+// TestHandlePolecatDone_Escalated_NoRouter verifies that ESCALATED exits
+// are handled correctly even without a router (no mail sent, still handled).
+func TestHandlePolecatDone_Escalated_NoRouter(t *testing.T) {
+	msg := &mail.Message{
+		ID:      "mail-escalated",
+		Subject: "POLECAT_DONE nux",
+		Body: `Exit: ESCALATED
+Issue: gt-abc
+Branch: polecat/nux/gt-abc`,
+	}
+
+	// Pass nil router - should still handle without panicking
+	result := HandlePolecatDone("/nonexistent", "testrig", msg, nil)
+
+	if !result.Handled {
+		t.Error("HandlePolecatDone ESCALATED: Handled should be true")
+	}
+	// Action should mention escalation
+	if !strings.Contains(result.Action, "escalated") {
+		t.Errorf("HandlePolecatDone ESCALATED: expected 'escalated' in action, got: %s", result.Action)
+	}
+}
+
+// TestHandleHelp_ForwardsToMayor verifies that HELP messages are forwarded to Mayor.
+// With a nil router, the handler should still set Handled=true and note the intent.
+func TestHandleHelp_ForwardsToMayor_NilRouter(t *testing.T) {
+	msg := &mail.Message{
+		ID:      "mail-help",
+		Subject: "HELP: Tests failing on CI",
+		Body: `Agent: gastown/polecats/nux
+Issue: gt-abc123
+Problem: Tests timeout after 30s
+Tried: Increased timeout`,
+	}
+
+	// nil router - should not panic, but will error on send
+	result := HandleHelp("/nonexistent", "testrig", msg, nil)
+
+	// With nil router, the forward is skipped (no-op), result.Handled is true
+	if !result.Handled {
+		t.Error("HandleHelp: Handled should be true")
+	}
+	// Action should mention mayor forwarding
+	if !strings.Contains(result.Action, "mayor") {
+		t.Errorf("HandleHelp: expected 'mayor' in action, got: %s", result.Action)
+	}
+}
+
+// TestHandleHelp_ActionMentionsForwarding verifies that the HELP handler action
+// indicates forwarding (not Deacon escalation).
+func TestHandleHelp_ActionMentionsForwarding(t *testing.T) {
+	msg := &mail.Message{
+		ID:      "mail-help-2",
+		Subject: "HELP: Git conflict in main.go",
+		Body: `Agent: gastown/polecats/alpha
+Issue: gt-xyz
+Problem: Merge conflict
+Tried: Manual rebase`,
+	}
+
+	result := HandleHelp("/nonexistent", "testrig", msg, nil)
+
+	// Must say "forward" not "escalate to deacon"
+	if strings.Contains(strings.ToLower(result.Action), "deacon") {
+		t.Errorf("HandleHelp: action must not mention 'deacon', got: %s", result.Action)
+	}
+	if !strings.Contains(strings.ToLower(result.Action), "forward") &&
+		!strings.Contains(strings.ToLower(result.Action), "mayor") {
+		t.Errorf("HandleHelp: action should mention 'forward' or 'mayor', got: %s", result.Action)
 	}
 }
 
