@@ -414,16 +414,18 @@ func (d *Daemon) heartbeat(state *State) {
 	// This validates tmux sessions are still alive for polecats with work-on-hook
 	d.checkPolecatSessionHealth()
 
-	// 13. Clean up orphaned claude subagent processes (memory leak prevention)
-	// These are Task tool subagents that didn't clean up after completion.
-	// This is a safety net - Deacon patrol also does this more frequently.
-	d.cleanupOrphanedProcesses()
-
 	// 13. Prune stale local polecat tracking branches across all rig clones.
 	// When polecats push branches to origin, other clones create local tracking
 	// branches via git fetch. After merge, remote branches are deleted but local
 	// branches persist indefinitely. This cleans them up periodically.
 	d.pruneStaleBranches()
+
+	// 14. Run mechanical patrol steps (deacon patrol steps extracted to Go).
+	// These replace equivalent LLM patrol steps with direct Go implementations:
+	// orphan cleanup (replaces former step 13), gate evaluation, dog pool,
+	// wisp TTL, session GC, log rotation, convoy feeding, idle town detection,
+	// and mail archiving.
+	d.runMechanicalPatrol()
 
 	// Update state
 	state.LastHeartbeat = time.Now()
