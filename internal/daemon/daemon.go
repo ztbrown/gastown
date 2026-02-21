@@ -73,6 +73,13 @@ type Daemon struct {
 
 	// Restart tracking with exponential backoff to prevent crash loops
 	restartTracker *RestartTracker
+
+	// escalator sends structured escalation mail to Mayor for LLM judgment cases.
+	escalator *Escalator
+
+	// healthTracker counts consecutive health check failures per agent.
+	// Only accessed from heartbeat loop goroutine - no sync needed.
+	healthTracker *HealthFailureTracker
 }
 
 // sessionDeath records a detected session death for mass death analysis.
@@ -140,6 +147,8 @@ func New(config *Config) (*Daemon, error) {
 		logger.Printf("Warning: failed to load restart state: %v", err)
 	}
 
+	escalator := NewEscalator(config.TownRoot, gtPath, logger.Printf)
+
 	return &Daemon{
 		config:         config,
 		patrolConfig:   patrolConfig,
@@ -151,6 +160,8 @@ func New(config *Config) (*Daemon, error) {
 		gtPath:         gtPath,
 		bdPath:         bdPath,
 		restartTracker: restartTracker,
+		escalator:      escalator,
+		healthTracker:  NewHealthFailureTracker(),
 	}, nil
 }
 
@@ -419,7 +430,14 @@ func (d *Daemon) heartbeat(state *State) {
 	// This is a safety net - Deacon patrol also does this more frequently.
 	d.cleanupOrphanedProcesses()
 
-	// 13. Prune stale local polecat tracking branches across all rig clones.
+	// 14. Check for dirty polecat states (non-clean cleanup_status after session dies)
+	d.checkDirtyPolecatStates()
+
+	// 15. Forward escalations from witness inboxes to Mayor
+	// (HELP requests and merge conflicts that need LLM judgment)
+	d.forwardWitnessEscalations()
+
+	// 16. Prune stale local polecat tracking branches across all rig clones.
 	// When polecats push branches to origin, other clones create local tracking
 	// branches via git fetch. After merge, remote branches are deleted but local
 	// branches persist indefinitely. This cleans them up periodically.
@@ -578,6 +596,21 @@ func (d *Daemon) ensureDeaconRunning() {
 	if d.restartTracker != nil {
 		if d.restartTracker.IsInCrashLoop(agentID) {
 			d.logger.Printf("Deacon is in crash loop, skipping restart (use 'gt daemon clear-backoff deacon' to reset)")
+			// Escalate to Mayor: crash loop requires LLM diagnosis
+			if d.escalator != nil {
+				info := d.restartTracker.GetInfo(agentID)
+				count := 0
+				if info != nil {
+					count = info.RestartCount
+				}
+				d.escalator.EscalateToMayor(EscalationContext{
+					Kind:     KindCrashLoop,
+					Priority: "high",
+					Rig:      "town",
+					Polecat:  agentID,
+					Count:    count,
+				})
+			}
 			return
 		}
 		if !d.restartTracker.CanRestart(agentID) {
@@ -1397,12 +1430,33 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	d.recordSessionDeath(sessionName)
 
 	// Auto-restart the polecat
+	polecatAgentID := fmt.Sprintf("%s/%s", rigName, polecatName)
 	if err := d.restartPolecatSession(rigName, polecatName, sessionName); err != nil {
 		d.logger.Printf("Error restarting polecat %s/%s: %v", rigName, polecatName, err)
 		// Notify witness as fallback
 		d.notifyWitnessOfCrashedPolecat(rigName, polecatName, info.HookBead, err)
 	} else {
 		d.logger.Printf("Successfully restarted crashed polecat %s/%s", rigName, polecatName)
+
+		// Track restart for crash loop detection
+		if d.restartTracker != nil {
+			d.restartTracker.RecordRestart(polecatAgentID)
+			if d.restartTracker.IsInCrashLoop(polecatAgentID) && d.escalator != nil {
+				restartInfo := d.restartTracker.GetInfo(polecatAgentID)
+				count := 0
+				if restartInfo != nil {
+					count = restartInfo.RestartCount
+				}
+				d.escalator.EscalateToMayor(EscalationContext{
+					Kind:     KindCrashLoop,
+					Priority: "high",
+					Rig:      rigName,
+					Polecat:  polecatName,
+					BeadID:   info.HookBead,
+					Count:    count,
+				})
+			}
+		}
 	}
 }
 
@@ -1451,6 +1505,17 @@ func (d *Daemon) emitMassDeathEvent() {
 	// Emit feed event
 	_ = events.LogFeed(events.TypeMassDeath, "daemon",
 		events.MassDeathPayload(count, window, sessions, ""))
+
+	// Escalate to Mayor: systemic issue requires LLM judgment
+	if d.escalator != nil {
+		d.escalator.EscalateToMayor(EscalationContext{
+			Kind:     KindMassDeath,
+			Priority: "urgent",
+			Count:    count,
+			Window:   window,
+			Sessions: sessions,
+		})
+	}
 
 	// Clear the deaths to avoid repeated alerts
 	d.recentDeaths = nil
@@ -1565,6 +1630,186 @@ func (d *Daemon) cleanupOrphanedProcesses() {
 				d.logger.Printf("  WARNING: PID %d (%s) survived SIGKILL", r.Process.PID, r.Process.Cmd)
 			} else {
 				d.logger.Printf("  Sent %s to PID %d (%s)", r.Signal, r.Process.PID, r.Process.Cmd)
+			}
+		}
+	}
+}
+
+// checkDirtyPolecatStates scans all polecat agent beads for non-clean cleanup_status
+// when the session is dead. A polecat that finished (agent_state=nuked/done) but has
+// cleanup_status != clean or unknown may have left uncommitted/unpushed work behind.
+// These cases require Mayor judgment to decide how to recover.
+func (d *Daemon) checkDirtyPolecatStates() {
+	if d.escalator == nil {
+		return
+	}
+	for _, rigName := range d.getKnownRigs() {
+		d.checkRigDirtyPolecatStates(rigName)
+	}
+}
+
+// checkRigDirtyPolecatStates checks a single rig's polecats for dirty states.
+func (d *Daemon) checkRigDirtyPolecatStates(rigName string) {
+	cmd := exec.Command(d.bdPath, "list", "--label=gt:agent", "--json")
+	cmd.Dir = d.config.TownRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.Output()
+	if err != nil {
+		return
+	}
+
+	var agents []struct {
+		ID          string `json:"id"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(output, &agents); err != nil {
+		return
+	}
+
+	rigPrefix := config.GetRigPrefix(d.config.TownRoot, rigName)
+	prefix := rigPrefix + "-" + rigName + "-polecat-"
+
+	for _, agent := range agents {
+		if !strings.HasPrefix(agent.ID, prefix) {
+			continue
+		}
+
+		// Parse agent fields from description
+		fields := beads.ParseAgentFieldsFromDescription(agent.Description)
+		if fields == nil {
+			continue
+		}
+
+		// Only check polecats that have finished or been nuked
+		// (not actively working - those are handled by checkPolecatHealth)
+		agentState := fields.AgentState
+		if agentState != "nuked" && agentState != "done" {
+			continue
+		}
+
+		// Check for dirty cleanup status
+		cs := fields.CleanupStatus
+		if cs == "" || cs == "clean" || cs == "unknown" {
+			continue
+		}
+
+		// Dirty state: session is done but work wasn't cleanly committed/pushed
+		polecatName := strings.TrimPrefix(agent.ID, prefix)
+		d.logger.Printf("Dirty polecat state: %s/%s has cleanup_status=%s (agent_state=%s)",
+			rigName, polecatName, cs, agentState)
+
+		d.escalator.EscalateToMayor(EscalationContext{
+			Kind:          KindDirtyPolecatState,
+			Priority:      "high",
+			Rig:           rigName,
+			Polecat:       polecatName,
+			BeadID:        agent.ID,
+			AgentState:    agentState,
+			CleanupStatus: cs,
+		})
+	}
+}
+
+// forwardWitnessEscalations reads each rig's witness inbox for HELP: and MERGE_FAILED
+// messages and forwards them to Mayor for LLM judgment. The daemon reads without deleting
+// so the witness agent still receives the messages; the dedup key prevents repeated forwarding.
+func (d *Daemon) forwardWitnessEscalations() {
+	if d.escalator == nil {
+		return
+	}
+	for _, rigName := range d.getKnownRigs() {
+		d.forwardRigWitnessEscalations(rigName)
+	}
+}
+
+// forwardRigWitnessEscalations forwards HELP and MERGE_FAILED from one rig's witness inbox.
+func (d *Daemon) forwardRigWitnessEscalations(rigName string) {
+	witnessIdentity := rigName + "/witness"
+	cmd := exec.Command(d.gtPath, "mail", "inbox", "--identity", witnessIdentity, "--json") //nolint:gosec // G204
+	cmd.Dir = d.config.TownRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.Output()
+	if err != nil {
+		return
+	}
+	if len(output) == 0 || string(output) == "[]" || string(output) == "[]\n" {
+		return
+	}
+
+	var messages []BeadsMessage
+	if err := json.Unmarshal(output, &messages); err != nil {
+		return
+	}
+
+	for i := range messages {
+		msg := &messages[i]
+		if msg.Read {
+			continue // Already processed by witness
+		}
+		subject := msg.Subject
+
+		if strings.HasPrefix(subject, "HELP:") {
+			// Forward HELP request to Mayor verbatim
+			// Dedup key: message ID (ensures each message is forwarded at most once)
+			ready, err := d.escalator.notifs.SendIfReady(
+				msg.ID, string(KindHelpRequest), subject)
+			if err != nil || !ready {
+				continue
+			}
+
+			helpBody := fmt.Sprintf(`Forwarded HELP request from witness inbox for %s.
+
+Original message ID: %s
+From: %s
+
+--- Original message ---
+%s`, rigName, msg.ID, msg.From, msg.Body)
+
+			sendCmd := exec.Command(d.gtPath, "mail", "send", "mayor/", //nolint:gosec // G204
+				"-s", "ESCALATION: "+subject,
+				"-m", helpBody,
+				"--priority", "high",
+			)
+			sendCmd.Dir = d.config.TownRoot
+			sendCmd.Env = os.Environ()
+			if err := sendCmd.Run(); err != nil {
+				d.logger.Printf("Warning: failed to forward HELP to Mayor (%s): %v", msg.ID, err)
+			} else {
+				d.logger.Printf("Forwarded HELP to Mayor from %s witness inbox: %s", rigName, subject)
+			}
+
+		} else if strings.HasPrefix(subject, "MERGE_FAILED ") {
+			// Forward merge failure to Mayor for conflict resolution strategy
+			ready, err := d.escalator.notifs.SendIfReady(
+				msg.ID, string(KindMergeConflict), subject)
+			if err != nil || !ready {
+				continue
+			}
+
+			mergeBody := fmt.Sprintf(`Forwarded MERGE_FAILED from witness inbox for %s.
+
+Original message ID: %s
+From: %s
+Rig: %s
+
+This merge conflict may require a decision about conflict resolution strategy.
+
+--- Original message ---
+%s`, rigName, msg.ID, msg.From, rigName, msg.Body)
+
+			sendCmd := exec.Command(d.gtPath, "mail", "send", "mayor/", //nolint:gosec // G204
+				"-s", "ESCALATION: merge conflict in "+rigName+": "+subject,
+				"-m", mergeBody,
+				"--priority", "high",
+			)
+			sendCmd.Dir = d.config.TownRoot
+			sendCmd.Env = os.Environ()
+			if err := sendCmd.Run(); err != nil {
+				d.logger.Printf("Warning: failed to forward MERGE_FAILED to Mayor (%s): %v", msg.ID, err)
+			} else {
+				d.logger.Printf("Forwarded MERGE_FAILED to Mayor from %s witness inbox: %s", rigName, subject)
 			}
 		}
 	}

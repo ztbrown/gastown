@@ -189,6 +189,20 @@ func (rt *RestartTracker) GetBackoffRemaining(agentID string) time.Duration {
 	return remaining
 }
 
+// GetInfo returns a copy of the restart info for an agent, or nil if none.
+func (rt *RestartTracker) GetInfo(agentID string) *AgentRestartInfo {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	info, exists := rt.state.Agents[agentID]
+	if !exists {
+		return nil
+	}
+	// Return a copy to prevent callers from mutating internal state
+	copy := *info
+	return &copy
+}
+
 // ClearCrashLoop manually clears the crash loop state for an agent.
 func (rt *RestartTracker) ClearCrashLoop(agentID string) {
 	rt.mu.Lock()
