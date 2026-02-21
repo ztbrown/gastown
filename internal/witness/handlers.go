@@ -42,20 +42,17 @@ type HandlerResult struct {
 }
 
 // HandlePolecatDone processes a POLECAT_DONE message from a polecat.
-// For ESCALATED/DEFERRED exits (no pending MR), auto-nukes if clean.
-// For PHASE_COMPLETE exits, recycles the polecat (session ends, worktree kept).
-// For COMPLETED exits with MR and clean state, auto-nukes immediately (ephemeral model).
-// For exits with pending MR but dirty state, creates cleanup wisp for manual intervention.
+//
+// Exit type routing:
+//   - PHASE_COMPLETE: recycle polecat (kill session, keep worktree for gate re-dispatch)
+//   - ESCALATED: forward to Mayor with context; auto-nuke if clean
+//   - COMPLETED + MR pending: send MERGE_READY to Refinery, defer nuke until MERGED
+//   - COMPLETED + dirty (no MR): escalate to Mayor via mail, create cleanup wisp
+//   - COMPLETED/DEFERRED (no MR, clean): auto-nuke immediately
 //
 // When a pending MR exists, sends MERGE_READY to the Refinery to trigger
 // immediate merge queue processing. This ensures work flows through the system
 // without waiting for the daemon's heartbeat cycle.
-//
-// Ephemeral Polecat Model:
-// Polecats are truly ephemeral - done at MR submission, recyclable immediately.
-// Once the branch is pushed (cleanup_status=clean), the polecat can be nuked.
-// The MR lifecycle continues independently in the Refinery.
-// If conflicts arise, Refinery creates a NEW conflict-resolution task for a NEW polecat.
 func HandlePolecatDone(workDir, rigName string, msg *mail.Message, router *mail.Router) *HandlerResult {
 	result := &HandlerResult{
 		MessageID:    msg.ID,
@@ -75,20 +72,45 @@ func HandlePolecatDone(workDir, rigName string, msg *mail.Message, router *mail.
 		return result
 	}
 
-	// Handle PHASE_COMPLETE: recycle polecat (session ends but worktree stays)
-	// The polecat is registered as a waiter on the gate and will be re-dispatched
-	// when the gate closes via gt gate wake.
+	// Handle PHASE_COMPLETE: recycle polecat (session ends but worktree stays).
+	// The polecat has already registered itself as a gate waiter via bd.
+	// The gate wake mechanism (gt gate wake) will send mail when gate closes.
+	// A new polecat will be dispatched to continue the molecule from the next step.
 	if payload.Exit == "PHASE_COMPLETE" {
+		if err := RecyclePolecatSession(workDir, rigName, payload.PolecatName); err != nil {
+			result.Error = fmt.Errorf("recycling polecat session: %w", err)
+		}
 		result.Handled = true
-		result.Action = fmt.Sprintf("phase-complete for %s (gate=%s) - session recycled, awaiting gate", payload.PolecatName, payload.Gate)
-		// Note: The polecat has already registered itself as a gate waiter via bd
-		// The gate wake mechanism (gt gate wake) will send mail when gate closes
-		// A new polecat will be dispatched to continue the molecule from the next step
+		result.Action = fmt.Sprintf("phase-complete for %s (gate=%s) - session recycled, worktree preserved", payload.PolecatName, payload.Gate)
+		return result
+	}
+
+	// Handle ESCALATED: forward to Mayor with context, then auto-nuke if clean.
+	// ESCALATED exits need LLM judgment - Mayor decides how to re-dispatch or resolve.
+	if payload.Exit == "ESCALATED" {
+		if router != nil {
+			mailID, err := escalateToMayor(router, rigName, payload)
+			if err != nil {
+				result.Error = fmt.Errorf("escalating to mayor: %w", err)
+			} else {
+				result.MailSent = mailID
+			}
+		}
+		// Auto-nuke if clean (polecat is done, work was escalated)
+		nukeResult := AutoNukeIfClean(workDir, rigName, payload.PolecatName)
+		if nukeResult.Nuked {
+			result.Handled = true
+			result.Action = fmt.Sprintf("escalated %s to mayor, auto-nuked (exit=ESCALATED): %s", payload.PolecatName, nukeResult.Reason)
+		} else {
+			wispID, _ := createCleanupWisp(workDir, payload.PolecatName, payload.IssueID, payload.Branch)
+			result.WispCreated = wispID
+			result.Handled = true
+			result.Action = fmt.Sprintf("escalated %s to mayor, cleanup wisp %s (nuke skipped: %s)", payload.PolecatName, wispID, nukeResult.Reason)
+		}
 		return result
 	}
 
 	// Check if this polecat has a pending MR
-	// ESCALATED/DEFERRED exits typically have no MR pending
 	hasPendingMR := payload.MRID != "" || payload.Exit == "COMPLETED"
 
 	// Local-only branches model: if there's a pending MR, DON'T nuke.
@@ -152,16 +174,27 @@ func HandlePolecatDone(workDir, rigName string, msg *mail.Message, router *mail.
 		result.Error = nukeResult.Error
 	}
 
-	// Couldn't auto-nuke (dirty state or verification failed) - create wisp for manual intervention
+	// Couldn't auto-nuke (dirty state or verification failed).
+	// Create cleanup wisp and escalate to Mayor via mail so work isn't lost.
 	wispID, err := createCleanupWisp(workDir, payload.PolecatName, payload.IssueID, payload.Branch)
 	if err != nil {
 		result.Error = fmt.Errorf("creating cleanup wisp: %w", err)
 		return result
 	}
 
+	// Escalate dirty state to Mayor via mail
+	if router != nil {
+		if _, escErr := escalateToMayor(router, rigName, payload); escErr != nil {
+			// Non-fatal - wisp is created for manual tracking
+			if result.Error == nil {
+				result.Error = fmt.Errorf("escalating dirty state to mayor: %w (non-fatal)", escErr)
+			}
+		}
+	}
+
 	result.Handled = true
 	result.WispCreated = wispID
-	result.Action = fmt.Sprintf("created cleanup wisp %s for %s (needs manual cleanup: %s)", wispID, payload.PolecatName, nukeResult.Reason)
+	result.Action = fmt.Sprintf("dirty state: created cleanup wisp %s for %s, escalated to mayor (reason: %s)", wispID, payload.PolecatName, nukeResult.Reason)
 
 	return result
 }
@@ -226,7 +259,8 @@ func HandleLifecycleShutdown(workDir, rigName string, msg *mail.Message) *Handle
 }
 
 // HandleHelp processes a HELP message from a polecat requesting intervention.
-// Assesses the request and either helps directly or escalates to Mayor.
+// HELP requests always require LLM judgment, so they are forwarded to the Mayor.
+// The Witness cannot autonomously resolve HELP requests - Mayor decides how to assist.
 func HandleHelp(workDir, rigName string, msg *mail.Message, router *mail.Router) *HandlerResult {
 	result := &HandlerResult{
 		MessageID:    msg.ID,
@@ -240,28 +274,20 @@ func HandleHelp(workDir, rigName string, msg *mail.Message, router *mail.Router)
 		return result
 	}
 
-	// Assess the help request
-	assessment := AssessHelpRequest(payload)
-
-	if assessment.CanHelp {
-		// Log that we can help - actual help is done by the Claude agent
-		result.Handled = true
-		result.Action = fmt.Sprintf("can help with '%s': %s", payload.Topic, assessment.HelpAction)
-		return result
-	}
-
-	// Need to escalate to Deacon (first line of escalation for routine ops)
-	if assessment.NeedsEscalation {
-		mailID, err := escalateToDeacon(router, rigName, payload, assessment.EscalationReason)
+	// Forward to Mayor - HELP always requires LLM judgment.
+	// The Mayor is the appropriate escalation target since Witness cannot
+	// autonomously resolve polecat help requests in the daemon context.
+	if router != nil {
+		mailID, err := forwardHelpToMayor(router, rigName, payload)
 		if err != nil {
-			result.Error = fmt.Errorf("escalating to deacon: %w", err)
+			result.Error = fmt.Errorf("forwarding HELP to mayor: %w", err)
 			return result
 		}
-
-		result.Handled = true
 		result.MailSent = mailID
-		result.Action = fmt.Sprintf("escalated '%s' to deacon: %s", payload.Topic, assessment.EscalationReason)
 	}
+
+	result.Handled = true
+	result.Action = fmt.Sprintf("forwarded HELP '%s' from %s to mayor", payload.Topic, payload.Agent)
 
 	return result
 }
@@ -693,6 +719,97 @@ Requested at: %s`,
 			payload.Problem,
 			payload.Tried,
 			reason,
+			payload.RequestedAt.Format(time.RFC3339),
+		),
+	}
+
+	if err := router.Send(msg); err != nil {
+		return "", err
+	}
+
+	return msg.ID, nil
+}
+
+// RecyclePolecatSession kills a polecat's tmux session without removing the worktree.
+// Used for PHASE_COMPLETE: the polecat is waiting on a gate, so its session ends
+// but the worktree is preserved for when the gate opens and work resumes.
+func RecyclePolecatSession(workDir, rigName, polecatName string) error {
+	initRegistryFromWorkDir(workDir)
+	sessionName := session.PolecatSessionName(session.PrefixFor(rigName), polecatName)
+	t := tmux.NewTmux()
+
+	running, err := t.HasSession(sessionName)
+	if err != nil {
+		return fmt.Errorf("checking session %s: %w", sessionName, err)
+	}
+	if !running {
+		// Session already gone - nothing to do
+		return nil
+	}
+
+	// Graceful signal then force kill
+	_ = t.SendKeysRaw(sessionName, "C-c")
+	time.Sleep(100 * time.Millisecond)
+	return t.KillSession(sessionName)
+}
+
+// escalateToMayor sends a POLECAT_DONE escalation to the Mayor.
+// Used for ESCALATED exits (needs LLM judgment) and COMPLETED+dirty exits (work at risk).
+func escalateToMayor(router *mail.Router, rigName string, payload *PolecatDonePayload) (string, error) {
+	msg := &mail.Message{
+		From:     fmt.Sprintf("%s/witness", rigName),
+		To:       "mayor/",
+		Subject:  fmt.Sprintf("POLECAT_DONE %s/%s exit=%s", rigName, payload.PolecatName, payload.Exit),
+		Priority: mail.PriorityHigh,
+		Body: fmt.Sprintf(`Polecat %s/%s signaled done with exit=%s.
+
+Issue: %s
+Branch: %s
+MR: %s
+
+Polecat requires Mayor attention:
+- ESCALATED: polecat encountered a blocker requiring LLM judgment
+- COMPLETED+dirty: cleanup_status indicates uncommitted/unpushed work
+
+Please investigate and coordinate cleanup or re-dispatch as appropriate.`,
+			rigName,
+			payload.PolecatName,
+			payload.Exit,
+			payload.IssueID,
+			payload.Branch,
+			payload.MRID,
+		),
+	}
+
+	if err := router.Send(msg); err != nil {
+		return "", err
+	}
+
+	return msg.ID, nil
+}
+
+// forwardHelpToMayor forwards a HELP request from a polecat to the Mayor.
+// HELP requests always require LLM judgment that the daemon cannot provide.
+func forwardHelpToMayor(router *mail.Router, rigName string, payload *HelpPayload) (string, error) {
+	msg := &mail.Message{
+		From:     fmt.Sprintf("%s/witness", rigName),
+		To:       "mayor/",
+		Subject:  fmt.Sprintf("HELP: %s (from %s)", payload.Topic, payload.Agent),
+		Priority: mail.PriorityHigh,
+		Body: fmt.Sprintf(`Polecat %s is requesting help.
+
+Topic: %s
+Issue: %s
+Problem: %s
+Tried: %s
+Requested: %s
+
+The Witness is forwarding this to Mayor for LLM-assisted resolution.`,
+			payload.Agent,
+			payload.Topic,
+			payload.IssueID,
+			payload.Problem,
+			payload.Tried,
 			payload.RequestedAt.Format(time.RFC3339),
 		),
 	}
