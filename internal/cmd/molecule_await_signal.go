@@ -146,6 +146,13 @@ func runMoleculeAwaitSignal(cmd *cobra.Command, args []string) error {
 
 	beadsDir := beads.ResolveBeadsDir(workDir)
 
+	// Read budget throttle from comptroller (graceful degradation if missing/stale)
+	throttle := readBudgetThrottle(townRoot)
+	budgetMultiplier := 1.0
+	if throttle != nil {
+		budgetMultiplier = throttle.Multiplier
+	}
+
 	// Read current idle cycles and backoff window from agent bead (if specified)
 	var idleCycles int
 	var backoffUntil time.Time // zero value means no active window
@@ -171,8 +178,8 @@ func runMoleculeAwaitSignal(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Calculate full timeout from backoff formula (uses idle cycles)
-	fullTimeout, err := calculateEffectiveTimeout(idleCycles)
+	// Calculate full timeout from backoff formula (uses idle cycles and budget multiplier)
+	fullTimeout, err := calculateEffectiveTimeout(idleCycles, budgetMultiplier)
 	if err != nil {
 		return fmt.Errorf("invalid timeout configuration: %w", err)
 	}
@@ -206,6 +213,10 @@ func runMoleculeAwaitSignal(cmd *cobra.Command, args []string) error {
 	}
 
 	if !awaitSignalQuiet && !moleculeJSON {
+		if throttle != nil {
+			fmt.Printf("%s Budget throttle active: zone=%s multiplier=%.2fx\n",
+				style.Dim.Render("💰"), throttle.Zone, throttle.Multiplier)
+		}
 		if resumed {
 			fmt.Printf("%s Resuming backoff (remaining: %v, idle: %d)...\n",
 				style.Dim.Render("⏳"), timeout.Round(time.Second), idleCycles)
@@ -230,6 +241,12 @@ func runMoleculeAwaitSignal(cmd *cobra.Command, args []string) error {
 	}
 
 	result.Elapsed = time.Since(startTime)
+
+	// Attach budget throttle info to result
+	if throttle != nil {
+		result.BudgetZone = throttle.Zone
+		result.BudgetMultiplier = throttle.Multiplier
+	}
 
 	// On timeout, increment idle cycles and clear backoff window
 	if result.Reason == "timeout" && awaitSignalAgentBead != "" {

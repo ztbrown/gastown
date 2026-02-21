@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,6 +17,7 @@ func TestCalculateEffectiveTimeout(t *testing.T) {
 		backoffMult int
 		backoffMax  string
 		idleCycles  int
+		budgetMult  float64
 		want        time.Duration
 		wantErr     bool
 	}{
@@ -86,6 +88,37 @@ func TestCalculateEffectiveTimeout(t *testing.T) {
 			backoffMax:  "invalid",
 			wantErr:     true,
 		},
+		{
+			name:       "budget multiplier 2x scales simple timeout",
+			timeout:    "60s",
+			budgetMult: 2.0,
+			want:       120 * time.Second,
+		},
+		{
+			name:        "budget multiplier 1.5x scales backoff timeout",
+			timeout:     "60s",
+			backoffBase: "30s",
+			backoffMult: 2,
+			idleCycles:  1, // 30s * 2^1 = 60s, * 1.5 = 90s
+			budgetMult:  1.5,
+			want:        90 * time.Second,
+		},
+		{
+			name:        "budget multiplier 2x scales backoff max cap",
+			timeout:     "60s",
+			backoffBase: "30s",
+			backoffMult: 2,
+			backoffMax:  "5m",
+			idleCycles:  10,  // capped at 5m * 2 = 10m
+			budgetMult:  2.0,
+			want:        10 * time.Minute,
+		},
+		{
+			name:       "budget multiplier < 1 clamped to 1",
+			timeout:    "60s",
+			budgetMult: 0.5, // clamped to 1.0
+			want:       60 * time.Second,
+		},
 	}
 
 	for _, tt := range tests {
@@ -99,7 +132,12 @@ func TestCalculateEffectiveTimeout(t *testing.T) {
 			}
 			awaitSignalBackoffMax = tt.backoffMax
 
-			got, err := calculateEffectiveTimeout(tt.idleCycles)
+			budgetMult := tt.budgetMult
+			if budgetMult == 0 {
+				budgetMult = 1.0 // default: no scaling
+			}
+
+			got, err := calculateEffectiveTimeout(tt.idleCycles, budgetMult)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("calculateEffectiveTimeout() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -109,6 +147,75 @@ func TestCalculateEffectiveTimeout(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReadBudgetThrottle(t *testing.T) {
+	t.Run("missing file returns nil", func(t *testing.T) {
+		dir := t.TempDir()
+		result := readBudgetThrottle(dir)
+		if result != nil {
+			t.Errorf("expected nil for missing file, got %+v", result)
+		}
+	})
+
+	t.Run("valid file returns throttle", func(t *testing.T) {
+		dir := t.TempDir()
+		now := time.Now().UTC()
+		content := fmt.Sprintf(`{"zone":"yellow","multiplier":2.0,"updated_at":%q}`, now.Format(time.RFC3339))
+		if err := os.WriteFile(filepath.Join(dir, ".budget-throttle.json"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		result := readBudgetThrottle(dir)
+		if result == nil {
+			t.Fatal("expected non-nil result for valid file")
+		}
+		if result.Zone != "yellow" {
+			t.Errorf("zone = %q, want %q", result.Zone, "yellow")
+		}
+		if result.Multiplier != 2.0 {
+			t.Errorf("multiplier = %v, want 2.0", result.Multiplier)
+		}
+	})
+
+	t.Run("stale file (>24h) returns nil", func(t *testing.T) {
+		dir := t.TempDir()
+		stale := time.Now().Add(-25 * time.Hour).UTC()
+		content := fmt.Sprintf(`{"zone":"red","multiplier":3.0,"updated_at":%q}`, stale.Format(time.RFC3339))
+		if err := os.WriteFile(filepath.Join(dir, ".budget-throttle.json"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		result := readBudgetThrottle(dir)
+		if result != nil {
+			t.Errorf("expected nil for stale file, got %+v", result)
+		}
+	})
+
+	t.Run("multiplier < 1.0 clamped to 1.0", func(t *testing.T) {
+		dir := t.TempDir()
+		now := time.Now().UTC()
+		content := fmt.Sprintf(`{"zone":"green","multiplier":0.5,"updated_at":%q}`, now.Format(time.RFC3339))
+		if err := os.WriteFile(filepath.Join(dir, ".budget-throttle.json"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		result := readBudgetThrottle(dir)
+		if result == nil {
+			t.Fatal("expected non-nil result")
+		}
+		if result.Multiplier != 1.0 {
+			t.Errorf("multiplier = %v, want 1.0 (clamped)", result.Multiplier)
+		}
+	})
+
+	t.Run("invalid json returns nil", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".budget-throttle.json"), []byte("not json"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		result := readBudgetThrottle(dir)
+		if result != nil {
+			t.Errorf("expected nil for invalid json, got %+v", result)
+		}
+	})
 }
 
 func TestAwaitSignalResult(t *testing.T) {
