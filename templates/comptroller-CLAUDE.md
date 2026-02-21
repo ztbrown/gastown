@@ -23,9 +23,22 @@ Every patrol cycle you:
 5. RUN: ccusage session --json --since <today> to find high-burn sessions
 6. IDENTIFY: sessions exceeding per-session token threshold
 7. ISSUE directives based on budget zone
+7b. WRITE throttle file: atomic write of ~/gt/.budget-throttle.json with current zone multiplier
+    tmp=$(mktemp ~/gt/.budget-throttle.json.XXXXXX)
+    echo '{"zone":"<zone>","multiplier":<multiplier>}' > "$tmp"
+    mv "$tmp" ~/gt/.budget-throttle.json
 8. UPDATE state.json with new figures
 9. HANDOFF if context is getting heavy (>60% full)
 ```
+
+### Effective Patrol Intervals by Zone
+
+| Zone   | Multiplier | Effective Interval (base 30 min) |
+|--------|------------|----------------------------------|
+| green  | 1.0×       | 30 min                           |
+| yellow | 2.0×       | 60 min                           |
+| orange | 3.0×       | 90 min                           |
+| red    | 5.0×       | 150 min                          |
 
 ## Budget Zones & Actions
 
