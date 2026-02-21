@@ -490,9 +490,10 @@ func (d *Daemon) heartbeat(state *State) {
 	// 14. Check for dirty polecat states (non-clean cleanup_status after session dies)
 	d.checkDirtyPolecatStates()
 
-	// 15. Forward escalations from witness inboxes to Mayor
-	// (HELP requests and merge conflicts that need LLM judgment)
-	d.forwardWitnessEscalations()
+	// 15. Process witness inboxes directly in the daemon tick loop.
+	// Handles mechanical protocol messages (POLECAT_DONE, MERGED, etc.) in Go.
+	// Replaces LLM witness session for inbox processing (gt-eb8y).
+	d.processWitnessInboxes()
 
 	// 16. Prune stale local polecat tracking branches across all rig clones.
 	// When polecats push branches to origin, other clones create local tracking
@@ -1912,110 +1913,6 @@ func (d *Daemon) checkRigDirtyPolecatStates(rigName string) {
 			AgentState:    agentState,
 			CleanupStatus: cs,
 		})
-	}
-}
-
-// forwardWitnessEscalations reads each rig's witness inbox for HELP: and MERGE_FAILED
-// messages and forwards them to Mayor for LLM judgment. The daemon reads without deleting
-// so the witness agent still receives the messages; the dedup key prevents repeated forwarding.
-func (d *Daemon) forwardWitnessEscalations() {
-	if d.escalator == nil {
-		return
-	}
-	for _, rigName := range d.getKnownRigs() {
-		d.forwardRigWitnessEscalations(rigName)
-	}
-}
-
-// forwardRigWitnessEscalations forwards HELP and MERGE_FAILED from one rig's witness inbox.
-func (d *Daemon) forwardRigWitnessEscalations(rigName string) {
-	witnessIdentity := rigName + "/witness"
-	cmd := exec.Command(d.gtPath, "mail", "inbox", "--identity", witnessIdentity, "--json") //nolint:gosec // G204
-	cmd.Dir = d.config.TownRoot
-	cmd.Env = os.Environ()
-
-	output, err := cmd.Output()
-	if err != nil {
-		return
-	}
-	if len(output) == 0 || string(output) == "[]" || string(output) == "[]\n" {
-		return
-	}
-
-	var messages []BeadsMessage
-	if err := json.Unmarshal(output, &messages); err != nil {
-		return
-	}
-
-	for i := range messages {
-		msg := &messages[i]
-		if msg.Read {
-			continue // Already processed by witness
-		}
-		subject := msg.Subject
-
-		if strings.HasPrefix(subject, "HELP:") {
-			// Forward HELP request to Mayor verbatim
-			// Dedup key: message ID (ensures each message is forwarded at most once)
-			ready, err := d.escalator.notifs.SendIfReady(
-				msg.ID, string(KindHelpRequest), subject)
-			if err != nil || !ready {
-				continue
-			}
-
-			helpBody := fmt.Sprintf(`Forwarded HELP request from witness inbox for %s.
-
-Original message ID: %s
-From: %s
-
---- Original message ---
-%s`, rigName, msg.ID, msg.From, msg.Body)
-
-			sendCmd := exec.Command(d.gtPath, "mail", "send", "mayor/", //nolint:gosec // G204
-				"-s", "ESCALATION: "+subject,
-				"-m", helpBody,
-				"--priority", "high",
-			)
-			sendCmd.Dir = d.config.TownRoot
-			sendCmd.Env = os.Environ()
-			if err := sendCmd.Run(); err != nil {
-				d.logger.Printf("Warning: failed to forward HELP to Mayor (%s): %v", msg.ID, err)
-			} else {
-				d.logger.Printf("Forwarded HELP to Mayor from %s witness inbox: %s", rigName, subject)
-			}
-
-		} else if strings.HasPrefix(subject, "MERGE_FAILED ") {
-			// Forward merge failure to Mayor for conflict resolution strategy
-			ready, err := d.escalator.notifs.SendIfReady(
-				msg.ID, string(KindMergeConflict), subject)
-			if err != nil || !ready {
-				continue
-			}
-
-			mergeBody := fmt.Sprintf(`Forwarded MERGE_FAILED from witness inbox for %s.
-
-Original message ID: %s
-From: %s
-Rig: %s
-
-This merge conflict may require a decision about conflict resolution strategy.
-
---- Original message ---
-%s`, rigName, msg.ID, msg.From, rigName, msg.Body)
-
-			sendCmd := exec.Command(d.gtPath, "mail", "send", "mayor/", //nolint:gosec // G204
-				"-s", "ESCALATION: merge conflict in "+rigName+": "+subject,
-				"-m", mergeBody,
-				"--priority", "high",
-			)
-			sendCmd.Dir = d.config.TownRoot
-			sendCmd.Env = os.Environ()
-			if err := sendCmd.Run(); err != nil {
-				d.logger.Printf("Warning: failed to forward MERGE_FAILED to Mayor (%s): %v", msg.ID, err)
-			} else {
-				d.logger.Printf("Forwarded MERGE_FAILED to Mayor from %s witness inbox: %s", rigName, subject)
-			}
-		}
 	}
 }
 
