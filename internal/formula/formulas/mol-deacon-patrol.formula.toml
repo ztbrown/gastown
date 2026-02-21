@@ -310,6 +310,16 @@ needs = ["check-convoy-completion"]
 description = """
 Detect stranded convoys and dispatch dogs to feed them, or auto-close empty convoys.
 
+**Budget-aware dispatch throttling:**
+Before dispatching dogs, check the budget throttle file:
+```bash
+cat ~/gt/.budget-throttle.json 2>/dev/null
+```
+If the file exists:
+- **GREEN/YELLOW**: Normal dispatch. No restrictions.
+- **ORANGE**: Skip non-critical dispatches (session-gc, orphan-scan). Only feed convoys with ready work.
+- **RED**: Skip ALL dog dispatches except critical convoy feeding. Infrastructure maintenance can wait.
+
 A convoy is "stranded" when it is open AND either:
 - Has ready issues (open, unblocked, no assignee) but no workers, OR
 - Has 0 tracked issues (empty — needs auto-close via convoy check)
@@ -636,7 +646,13 @@ gt dog status <name>
 # If idle > 24h: gt dog remove <name>
 ```
 
-**Pool sizing guidelines:**
+**Budget-aware pool sizing:**
+Check `~/gt/.budget-throttle.json` before spawning:
+- **GREEN/YELLOW**: Normal pool sizing (max 4 dogs).
+- **ORANGE**: Limit to 2 concurrent dogs. Do not spawn new dogs if 2 are already active.
+- **RED**: Limit to 1 dog. Only maintain 1 active dog for critical work.
+
+**Pool sizing guidelines (default/GREEN):**
 - Minimum: 1 idle dog always available
 - Maximum: 4 dogs total (balance resources vs throughput)
 - Spawn on demand when pool is empty
