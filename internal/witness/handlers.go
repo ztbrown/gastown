@@ -16,6 +16,7 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
+	"github.com/steveyegge/gastown/internal/nudge"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -648,16 +649,43 @@ Verified: clean git state`,
 	return msg.ID, nil
 }
 
-// nudgeRefinery wakes the refinery session to check its inbox.
-// Uses immediate delivery: sends directly to the tmux pane.
-// No cooperative queue — idle agents never call Drain(), so queued
-// nudges would be stuck forever. Direct delivery is safe: if the
-// agent is busy, text buffers in tmux and is processed at next prompt.
+// readRefineryDaemonPID reads the PID from the refinery Go daemon PID file.
+// Returns 0 if the file does not exist (daemon not running).
+func readRefineryDaemonPID(rigPath string) int {
+	pidFile := filepath.Join(rigPath, "refinery", "refinery.pid")
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
+// nudgeRefinery wakes the refinery to process its inbox immediately.
+// For the Go daemon: sends SIGUSR1 to the daemon process.
+// For legacy tmux sessions: queues a cooperative nudge.
 func nudgeRefinery(townRoot, rigName string) error {
+	rigPath := filepath.Join(townRoot, rigName)
+
+	// Try Go daemon first: send SIGUSR1 for immediate wakeup
+	pid := readRefineryDaemonPID(rigPath)
+	if pid > 0 {
+		proc, findErr := os.FindProcess(pid)
+		if findErr == nil {
+			if sigErr := nudgeProcess(proc); sigErr == nil {
+				return nil // Successfully signaled Go daemon
+			}
+		}
+		// Process gone — fall through to check legacy session
+	}
+
+	// Fallback: legacy tmux session
 	_ = session.InitRegistry(townRoot)
 	sessionName := session.RefinerySessionName(rigName)
 
-	// Check if refinery is running
 	t := tmux.NewTmux()
 	running, err := t.HasSession(sessionName)
 	if err != nil {
@@ -665,16 +693,20 @@ func nudgeRefinery(townRoot, rigName string) error {
 	}
 
 	if !running {
-		// Refinery not running - daemon will start it on next heartbeat.
-		// The MERGE_READY mail will be waiting in its inbox.
+		// Neither Go daemon nor tmux session running.
+		// The MERGE_READY mail will be waiting when the daemon starts.
 		return nil
 	}
 
-	// Immediate delivery: send directly to tmux pane.
-	// No cooperative queue — idle agents never call Drain(), so queued
-	// nudges would be stuck forever. Direct delivery is safe: if the
-	// agent is busy, text buffers in tmux and is processed at next prompt.
-	return t.NudgeSession(sessionName, "MERGE_READY received - check inbox for pending work")
+	// Legacy session: queue cooperative nudge
+	nudgeMsg := "MERGE_READY received - check inbox for pending work"
+	if townRoot != "" {
+		return nudge.Enqueue(townRoot, sessionName, nudge.QueuedNudge{
+			Sender:  rigName + "/witness",
+			Message: nudgeMsg,
+		})
+	}
+	return t.NudgeSession(sessionName, nudgeMsg)
 }
 
 // escalateToDeacon sends an escalation mail to the Deacon for routine operational issues.

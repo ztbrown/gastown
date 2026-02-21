@@ -63,15 +63,9 @@ func runPatrolNew(cmd *cobra.Command, args []string) error {
 			Assignee:      roleInfo.Rig + "/witness",
 		}
 	case RoleRefinery:
-		cfg = PatrolConfig{
-			RoleName:      "refinery",
-			PatrolMolName: "mol-refinery-patrol",
-			BeadsDir:      roleInfo.WorkDir,
-			Assignee:      roleInfo.Rig + "/refinery",
-			ExtraVars:     buildRefineryPatrolVars(roleInfo),
-		}
+		return fmt.Errorf("refinery is now a Go daemon — no patrol molecule needed (gt-s5bv)")
 	default:
-		return fmt.Errorf("unsupported role for patrol: %q (expected deacon, witness, or refinery)", roleName)
+		return fmt.Errorf("unsupported role for patrol: %q (expected deacon or witness)", roleName)
 	}
 
 	// Create and hook the wisp

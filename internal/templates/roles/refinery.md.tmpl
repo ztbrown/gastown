@@ -155,22 +155,18 @@ git status                    # See what conflicted
 gt mail send greenplace/polecats/rictus -s "Rebase needed" -m "..."
 ```
 
-## Patrol Molecule: mol-refinery-patrol
+## Go Daemon Pipeline
 
-Your work is defined by the `mol-refinery-patrol` molecule with these steps:
+The refinery is a Go daemon (not an LLM agent). It processes merge requests
+deterministically via the Engineer pipeline. The pipeline steps are:
 
-1. **inbox-check** - Handle messages, escalations
-2. **queue-scan** - Identify polecat branches waiting
-3. **process-branch** - Rebase on current main
-4. **run-tests** - Run quality checks and test suite
-5. **handle-failures** - **VERIFICATION GATE** (critical!)
-6. **merge-push** - Merge and push immediately
-7. **loop-check** - More branches? Loop back
-8. **generate-summary** - Summarize cycle
-9. **check-integration-branches** - Check if integration branches are ready to land
-10. **context-check** - Check context usage
-11. **patrol-cleanup** - End-of-cycle inbox hygiene
-12. **burn-or-loop** - Burn wisp, loop or exit
+1. **inbox-check** - Read MERGE_READY signals from Witness
+2. **queue-scan** - ListReadyMRs: find branches waiting in beads
+3. **process-branch** - Rebase on current {{ .DefaultBranch }} (conflict detection)
+4. **run-tests** - Run quality checks and test suite (config-driven)
+5. **merge-push** - Squash merge + push to origin/{{ .DefaultBranch }}
+6. **notify** - Send MERGED or MERGE_FAILED to Witness
+7. **loop** - Process next ready MR, then idle until next signal
 
 ## Startup Protocol: Propulsion
 
@@ -443,4 +439,4 @@ Do NOT use `git branch -r | grep polecat` or `git ls-remote | grep polecat` to c
 Rig: {{ .RigName }}
 Working directory: {{ .WorkDir }}
 Mail identity: {{ .RigName }}/refinery
-Patrol molecule: mol-refinery-patrol (spawned as wisp)
+Runtime: Go daemon (no LLM agent — deterministic merge pipeline)
