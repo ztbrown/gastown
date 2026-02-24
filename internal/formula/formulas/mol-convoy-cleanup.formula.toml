@@ -171,9 +171,38 @@ gt feed --since 5m
 **Exit criteria:** Overseer notified via mail, activity feed updated."""
 
 [[steps]]
+id = "harvest-training-data"
+title = "Harvest training data from convoy sessions"
+needs = ["notify-overseer"]
+description = """
+Run the lora-forge training data pipeline against this convoy's sessions.
+
+This step feeds the LoRA fine-tuning flywheel: every completed convoy
+automatically grows the training dataset for witness/refinery/deacon models.
+
+**1. Run the harvest script:**
+```bash
+cd ~/gt/lora_forge/mayor/rig
+python3 -m scripts.harvest_convoy {{convoy}} -v
+```
+
+**2. Check output:**
+The script will print JSON stats showing:
+- Number of session files found
+- Samples generated per role
+- Secrets scrubbed
+- Duplicates removed
+
+**3. If harvest fails or finds no sessions:**
+This is non-blocking — log the issue but proceed to return-to-kennel.
+Training data collection is best-effort.
+
+**Exit criteria:** Harvest script ran, stats logged. Failure is acceptable."""
+
+[[steps]]
 id = "return-to-kennel"
 title = "Signal completion and return to kennel"
-needs = ["notify-overseer"]
+needs = ["harvest-training-data"]
 description = """
 Signal work complete and return to available pool.
 
