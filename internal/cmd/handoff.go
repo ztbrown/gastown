@@ -724,8 +724,41 @@ func buildRestartCommand(sessionName string) (string, error) {
 			currentAgent = val
 		}
 	}
+	// Build environment exports - role vars first, then Claude vars
+	var exports []string
+	var agentEnv map[string]string // agent config Env (rc.toml [agents.X.env])
+
+	// Resolve runtime config for the role/agent. This determines BOTH the
+	// command to run AND the environment variables to export.
+	// Priority: GT_AGENT override > role_agents mapping > default agent.
+	var runtimeConfig *config.RuntimeConfig
+	if gtRole != "" {
+		simpleRole := config.ExtractSimpleRole(gtRole)
+		if currentAgent != "" {
+			rc, _, err := config.ResolveAgentConfigWithOverride(townRoot, rigPath, currentAgent)
+			if err == nil {
+				runtimeConfig = rc
+			} else {
+				runtimeConfig = config.ResolveRoleAgentConfig(simpleRole, townRoot, rigPath)
+			}
+		} else {
+			// No GT_AGENT override — resolve via role_agents mapping.
+			// This ensures roles mapped to non-default agents (e.g., deacon→kimi)
+			// get the correct command and env vars across handoff cycles.
+			runtimeConfig = config.ResolveRoleAgentConfig(simpleRole, townRoot, rigPath)
+		}
+	} else if currentAgent != "" {
+		rc, _, err := config.ResolveAgentConfigWithOverride(townRoot, rigPath, currentAgent)
+		if err == nil {
+			runtimeConfig = rc
+		}
+	}
+
 	var runtimeCmd string
-	if currentAgent != "" {
+	if runtimeConfig != nil {
+		runtimeCmd = runtimeConfig.BuildCommandWithPrompt(beacon)
+		agentEnv = runtimeConfig.Env
+	} else if currentAgent != "" {
 		var err error
 		runtimeCmd, err = config.GetRuntimeCommandWithPromptAndAgentOverride(rigPath, beacon, currentAgent)
 		if err != nil {
@@ -735,30 +768,11 @@ func buildRestartCommand(sessionName string) (string, error) {
 		runtimeCmd = config.GetRuntimeCommandWithPrompt(rigPath, beacon)
 	}
 
-	// Build environment exports - role vars first, then Claude vars
-	var exports []string
-	var agentEnv map[string]string // agent config Env (rc.toml [agents.X.env])
 	if gtRole != "" {
-		simpleRole := config.ExtractSimpleRole(gtRole)
-		// When GT_AGENT is set, resolve config with the override so we pick up
-		// the active agent's env (e.g., NODE_OPTIONS from [agents.X.env]).
-		// Otherwise, fall back to role-based resolution.
-		var runtimeConfig *config.RuntimeConfig
-		if currentAgent != "" {
-			rc, _, err := config.ResolveAgentConfigWithOverride(townRoot, rigPath, currentAgent)
-			if err == nil {
-				runtimeConfig = rc
-			} else {
-				runtimeConfig = config.ResolveRoleAgentConfig(simpleRole, townRoot, rigPath)
-			}
-		} else {
-			runtimeConfig = config.ResolveRoleAgentConfig(simpleRole, townRoot, rigPath)
-		}
-		agentEnv = runtimeConfig.Env
 		exports = append(exports, "GT_ROLE="+gtRole)
 		exports = append(exports, "BD_ACTOR="+gtRole)
 		exports = append(exports, "GIT_AUTHOR_NAME="+gtRole)
-		if runtimeConfig.Session != nil && runtimeConfig.Session.SessionIDEnv != "" {
+		if runtimeConfig != nil && runtimeConfig.Session != nil && runtimeConfig.Session.SessionIDEnv != "" {
 			exports = append(exports, "GT_SESSION_ID_ENV="+runtimeConfig.Session.SessionIDEnv)
 		}
 	}
