@@ -781,9 +781,14 @@ func buildRestartCommand(sessionName string) (string, error) {
 	// when cwd-based detection fails (broken state recovery)
 	exports = append(exports, "GT_ROOT="+townRoot)
 
-	// Preserve GT_AGENT across handoff so agent override persists
+	// Preserve GT_AGENT across handoff so agent override persists.
+	// When currentAgent is empty but runtimeConfig resolved a named agent
+	// (e.g., via role_agents mapping), propagate that so subsequent handoffs
+	// and liveness checks see the correct agent identity.
 	if currentAgent != "" {
 		exports = append(exports, "GT_AGENT="+currentAgent)
+	} else if runtimeConfig != nil && runtimeConfig.ResolvedAgent != "" {
+		exports = append(exports, "GT_AGENT="+runtimeConfig.ResolvedAgent)
 	}
 
 	// Preserve GT_PROCESS_NAMES across handoff for accurate liveness detection.
@@ -805,6 +810,16 @@ func buildRestartCommand(sessionName string) (string, error) {
 			// Shell-escape the value in case it contains special chars
 			exports = append(exports, fmt.Sprintf("%s=%q", name, val))
 		}
+	}
+
+	// Export agent-specific env vars from RuntimeConfig.Env (e.g., ANTHROPIC_BASE_URL
+	// for custom model proxies). These may not be in claudeEnvVars or the current
+	// process environment (e.g., remote handoff from mayor to deacon).
+	for k, v := range agentEnv {
+		if k == "NODE_OPTIONS" {
+			continue // Handled separately below
+		}
+		exports = append(exports, fmt.Sprintf("%s=%s", k, config.ShellQuote(v)))
 	}
 
 	// Clear NODE_OPTIONS to prevent debugger flags (e.g., --inspect from VSCode)

@@ -148,12 +148,6 @@ func parseRigInfraSession(sess string) string {
 // runs without -c (legacy behavior for backward compatibility).
 var cycleClientTarget string
 
-// cycleRigInfraSession cycles between witness and refinery sessions for a rig.
-func cycleRigInfraSession(direction int, currentSession, rig string) error {
-	// Find running infra sessions for this rig
-	witnessSession := sessionpkg.WitnessSessionName(rig)
-	refinerySession := sessionpkg.RefinerySessionName(rig)
-
 // resolveCurrentSession returns the current tmux session, using override if provided.
 func resolveCurrentSession(override string) (string, error) {
 	if override != "" {
