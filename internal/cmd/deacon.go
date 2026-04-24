@@ -376,6 +376,20 @@ This helps the Deacon understand which convoys have been recently fed.`,
 	RunE: runDeaconFeedStrandedState,
 }
 
+var deaconPatrolCmd = &cobra.Command{
+	Use:   "patrol",
+	Short: "Run Deacon patrol cycle",
+	Long: `Run the Deacon patrol cycle.
+
+This command:
+1. Updates the heartbeat
+2. Checks the hook for assigned work
+3. If hook is empty, creates and executes a mol-deacon-patrol wisp
+
+Called by the daemon when Deacon is idle. Can also be run manually.`,
+	RunE: runDeaconPatrol,
+}
+
 var (
 	triggerTimeout time.Duration
 
@@ -432,6 +446,7 @@ func init() {
 	deaconCmd.AddCommand(deaconRedispatchStateCmd)
 	deaconCmd.AddCommand(deaconFeedStrandedCmd)
 	deaconCmd.AddCommand(deaconFeedStrandedStateCmd)
+	deaconCmd.AddCommand(deaconPatrolCmd)
 
 	// Flags for status
 	deaconStatusCmd.Flags().BoolVar(&deaconStatusJSON, "json", false, "Output as JSON")
@@ -489,6 +504,67 @@ func init() {
 	deaconRestartCmd.Flags().StringVar(&deaconAgentOverride, "agent", "", "Agent alias to run the Deacon with (overrides town default)")
 
 	rootCmd.AddCommand(deaconCmd)
+}
+
+// runDeaconPatrol implements the patrol command.
+// Updates heartbeat, checks hook, and creates/executes patrol wisp if needed.
+func runDeaconPatrol(cmd *cobra.Command, args []string) error {
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	// Step 1: Update heartbeat
+	if err := deacon.Touch(townRoot); err != nil {
+		return fmt.Errorf("updating heartbeat: %w", err)
+	}
+
+	// Step 2: Check if Deacon is paused
+	paused, _, err := deacon.IsPaused(townRoot)
+	if err != nil {
+		return fmt.Errorf("checking pause state: %w", err)
+	}
+	if paused {
+		fmt.Println("Deacon is paused - skipping patrol")
+		return nil
+	}
+
+	// Step 3: Check hook for work (run 'gt hook' command)
+	hookCmd := exec.Command("gt", "hook")
+	hookCmd.Dir = townRoot
+	hookOutput, err := hookCmd.CombinedOutput()
+	if err == nil && strings.Contains(string(hookOutput), "Hooked:") {
+		fmt.Println("Work found on hook - execute before creating new patrol.")
+		return nil
+	}
+
+	// Step 4: Create and hook mol-deacon-patrol wisp
+	fmt.Println("No work on hook - creating mol-deacon-patrol wisp...")
+
+	patrolID, err := autoSpawnPatrol(PatrolConfig{
+		RoleName:      "deacon",
+		PatrolMolName: "mol-deacon-patrol",
+		BeadsDir:      townRoot,
+		Assignee:      "deacon",
+		HeaderEmoji:   "🛡️",
+		HeaderTitle:   "Deacon Patrol",
+		WorkLoopSteps: []string{
+			"Check inbox for messages",
+			"Check session health (Mayor, Witnesses, Polecats)",
+			"Check for stranded convoys",
+			"Process stale hooks",
+			"Scan for zombies",
+			"Close patrol when complete",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("spawning patrol: %w", err)
+	}
+
+	fmt.Printf("Created and hooked patrol: %s\n", patrolID)
+	fmt.Println("Patrol wisp ready for execution.")
+
+	return nil
 }
 
 func runDeaconStart(cmd *cobra.Command, args []string) error {
