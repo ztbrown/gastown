@@ -33,6 +33,11 @@ CRASHED=()
 STUCK=()
 HEALTHY=0
 
+# Avoid subshell scope loss by writing to temp file
+RIG_PREFIX_FILE=$(mktemp)
+echo "$RIG_PREFIX_MAP" > "$RIG_PREFIX_FILE"
+trap "rm -f $RIG_PREFIX_FILE" EXIT
+
 while IFS='|' read -r RIG PREFIX; do
   [ -z "$RIG" ] && continue
   POLECAT_DIR="$TOWN_ROOT/$RIG/polecats"
@@ -81,7 +86,7 @@ while IFS='|' read -r RIG PREFIX; do
       fi
     fi
   done
-done <<< "$RIG_PREFIX_MAP"
+done < "$RIG_PREFIX_FILE"
 
 log ""
 log "Polecat health: ${#CRASHED[@]} crashed, ${#STUCK[@]} stuck, $HEALTHY healthy"
@@ -135,28 +140,32 @@ fi
 # --- Take action --------------------------------------------------------------
 
 # Crashed polecats: notify witness to restart
-for ENTRY in "${CRASHED[@]}"; do
-  IFS='|' read -r SESSION RIG PCAT HOOK <<< "$ENTRY"
-  log "Requesting restart for $RIG/polecats/$PCAT (hook=$HOOK)"
-  gt mail send "$RIG/witness" -s "RESTART_POLECAT: $RIG/$PCAT" --stdin <<BODY
+if [ ${#CRASHED[@]:-0} -gt 0 ]; then
+  for ENTRY in "${CRASHED[@]}"; do
+    IFS='|' read -r SESSION RIG PCAT HOOK <<< "$ENTRY"
+    log "Requesting restart for $RIG/polecats/$PCAT (hook=$HOOK)"
+    gt mail send "$RIG/witness" -s "RESTART_POLECAT: $RIG/$PCAT" --stdin <<BODY
 Polecat $PCAT crash confirmed by stuck-agent-dog plugin.
 hook_bead: $HOOK
 action: restart requested
 BODY
-done
+  done
+fi
 
 # Zombie polecats: kill zombie session, then request restart
-for ENTRY in "${STUCK[@]}"; do
-  IFS='|' read -r SESSION RIG PCAT HOOK REASON <<< "$ENTRY"
-  log "Killing zombie session $SESSION and requesting restart"
-  tmux kill-session -t "$SESSION" 2>/dev/null || true
-  gt mail send "$RIG/witness" -s "RESTART_POLECAT: $RIG/$PCAT (zombie cleared)" --stdin <<BODY
+if [ ${#STUCK[@]:-0} -gt 0 ]; then
+  for ENTRY in "${STUCK[@]}"; do
+    IFS='|' read -r SESSION RIG PCAT HOOK REASON <<< "$ENTRY"
+    log "Killing zombie session $SESSION and requesting restart"
+    tmux kill-session -t "$SESSION" 2>/dev/null || true
+    gt mail send "$RIG/witness" -s "RESTART_POLECAT: $RIG/$PCAT (zombie cleared)" --stdin <<BODY
 Polecat $PCAT zombie session cleared by stuck-agent-dog plugin.
 hook_bead: $HOOK
 reason: $REASON
 action: restart requested
 BODY
-done
+  done
+fi
 
 # Deacon issues: escalate
 if [ -n "$DEACON_ISSUE" ]; then
