@@ -131,6 +131,14 @@ type PatrolsConfig struct {
 	MainBranchTest         *MainBranchTestConfig          `json:"main_branch_test,omitempty"`
 	QuotaDog               *QuotaDogConfig                `json:"quota_dog,omitempty"`
 	RestartTracker         *RestartTrackerConfig          `json:"restart_tracker,omitempty"`
+	DiscordWatcher         *DiscordWatcherConfig          `json:"discord_watcher,omitempty"`
+}
+
+// DiscordWatcherConfig holds configuration for the Discord watcher.
+// The watcher monitors Discord for @mentions and DMs and sends mail to mayor/.
+type DiscordWatcherConfig struct {
+	// Enabled controls whether the Discord watcher runs.
+	Enabled bool `json:"enabled"`
 }
 
 // DoltRemotesConfig holds configuration for the dolt_remotes patrol.
@@ -307,6 +315,12 @@ func IsPatrolEnabled(config *DaemonPatrolConfig, patrol string) bool {
 			return false
 		}
 		return config.Patrols.QuotaDog.Enabled
+	}
+	if patrol == "discord_watcher" {
+		if config == nil || config.Patrols == nil || config.Patrols.DiscordWatcher == nil {
+			return false
+		}
+		return config.Patrols.DiscordWatcher.Enabled
 	}
 
 	if config == nil || config.Patrols == nil {

@@ -103,8 +103,8 @@ func (w *DiscordWatcher) findWatcherScript() (string, error) {
 		}
 	}
 
-	// Strategy 2: legacy dev path (source checkout structure)
-	devPath := filepath.Join(w.townRoot, "gastown", "crew", "hal", "internal", "discord", "watcher.py")
+	// Strategy 2: dev path relative to the Go source (source checkout structure)
+	devPath := filepath.Join(w.townRoot, "internal", "daemon", "discord", "watcher.py")
 	if _, err := os.Stat(devPath); err == nil {
 		return devPath, nil
 	}

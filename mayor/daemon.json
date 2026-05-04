@@ -1,0 +1,86 @@
+{
+  "type": "daemon-patrol-config",
+  "version": 1,
+  "heartbeat": {
+    "enabled": true,
+    "interval": "3m"
+  },
+  "patrols": {
+    "refinery": {
+      "enabled": true,
+      "interval": "5m",
+      "agent": "refinery",
+      "rigs": [
+        "gastown",
+        "crankiac",
+        "untitled_golf_game",
+        "lora_forge",
+        "tdarr",
+        "meshnet"
+      ]
+    },
+    "witness": {
+      "enabled": true,
+      "interval": "5m",
+      "agent": "witness",
+      "rigs": [
+        "gastown",
+        "crankiac",
+        "untitled_golf_game",
+        "lora_forge",
+        "tdarr",
+        "meshnet"
+      ]
+    },
+    "deacon": {
+      "enabled": true,
+      "interval": "5m",
+      "agent": "deacon"
+    },
+    "handler": {
+      "enabled": true
+    },
+    "dolt_backup": {
+      "enabled": true,
+      "interval": "15m"
+    },
+    "jsonl_git_backup": {
+      "enabled": true,
+      "interval": "15m",
+      "scrub": true
+    },
+    "wisp_reaper": {
+      "enabled": true,
+      "interval": "30m",
+      "max_age": "24h",
+      "delete_age": "168h"
+    },
+    "doctor_dog": {
+      "enabled": true,
+      "interval": "5m"
+    },
+    "compactor_dog": {
+      "enabled": true,
+      "interval": "24h",
+      "threshold": 2000
+    },
+    "checkpoint_dog": {
+      "enabled": true,
+      "interval": "10m"
+    },
+    "scheduled_maintenance": {
+      "enabled": true,
+      "window": "03:00",
+      "interval": "daily",
+      "threshold": 1000
+    },
+    "main_branch_test": {
+      "enabled": true,
+      "interval": "30m",
+      "timeout": "10m"
+    },
+    "discord_watcher": {
+      "enabled": false
+    }
+  }
+}

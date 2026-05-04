@@ -59,8 +59,9 @@ type Daemon struct {
 	curator       *feed.Curator
 	convoyManager *ConvoyManager
 	beadsStores   map[string]beadsdk.Storage
-	doltServer    *DoltServerManager
-	krcPruner     *KRCPruner
+	doltServer      *DoltServerManager
+	krcPruner       *KRCPruner
+	discordWatcher  *DiscordWatcher
 
 	// disabledPatrols is loaded from town settings (disabled_patrols field).
 	// Provides a simple way to disable individual patrol dogs without editing
@@ -467,6 +468,17 @@ func (d *Daemon) Run() (err error) {
 			d.logger.Printf("Warning: failed to start KRC pruner: %v", err)
 		} else {
 			d.logger.Println("KRC pruner started")
+		}
+	}
+
+	// Start Discord watcher if configured (opt-in: requires discord_watcher.enabled in daemon.json)
+	if d.isPatrolActive("discord_watcher") {
+		dw := NewDiscordWatcher(d.config.TownRoot, d.logger.Printf)
+		if err := dw.Start(); err != nil {
+			d.logger.Printf("Warning: failed to start Discord watcher: %v", err)
+		} else {
+			d.discordWatcher = dw
+			d.logger.Println("Discord watcher started")
 		}
 	}
 
@@ -2122,6 +2134,12 @@ func (d *Daemon) shutdown(state *State) error { //nolint:unparam // error return
 	if d.krcPruner != nil {
 		d.krcPruner.Stop()
 		d.logger.Println("KRC pruner stopped")
+	}
+
+	// Stop Discord watcher
+	if d.discordWatcher != nil {
+		d.discordWatcher.Stop()
+		d.logger.Println("Discord watcher stopped")
 	}
 
 	// Push Dolt remotes before stopping the server (if patrol is enabled)
